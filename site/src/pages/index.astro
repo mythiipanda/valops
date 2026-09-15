@@ -1,0 +1,143 @@
+---
+import '../styles.css';
+import { Matchup, OddsTable, SwingBoard } from '../components/islands';
+import { readFileSync, existsSync } from 'node:fs';
+
+const has = existsSync(new URL('../../public/data.json', import.meta.url));
+const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', import.meta.url), 'utf8')) : null;
+---
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>VALOPS Champions Shanghai 2026 predictor</title>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <h1>Champions Shanghai</h1>
+    {data && <p class="favline"><strong>{data.teams[0].name}</strong> {(data.teams[0].title * 100).toFixed(1)}% to win</p>}
+    <p class="dateline">Sep 24 to Oct 18 · 16 teams</p>
+  </header>
+
+  {data && (<>
+  <section>
+    <h2>Title odds</h2>
+    <OddsTable teams={data.teams} client:load />
+  </section>
+
+  <section>
+    <h2>Matchup</h2>
+    <Matchup teams={data.teams} matchups={data.matchups} client:load />
+  </section>
+
+  <section>
+    <h2>Groups</h2>
+    <p class="sub">Opener win odds, then advance odds.</p>
+    {Object.entries(data.bracket).map(([g, b]) => (
+      <div class="team">
+        <div class="teamhead"><span>Group {g}</span></div>
+        {b.openers.map(o => (
+          <div class="prow"><span>{data.teams.find(t => t.id === o.a)?.name} vs {data.teams.find(t => t.id === o.b)?.name}</span>
+          <div class="bar"><i style={{ width: `${o.p * 100}%` }} /></div>
+          <span class="num">{(o.p * 100).toFixed(0)}</span></div>
+        ))}
+        <table>
+          <tbody>
+            {b.odds.sort((x, y) => y.adv - x.adv).map(o => (
+              <tr><td>{o.name}</td>
+              <td class="num">{(o.adv * 100).toFixed(1)}</td>
+              <td class="detail">2-0 {(o.first * 100).toFixed(0)} · 2-1 {(o.second * 100).toFixed(0)}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ))}
+  </section>
+
+  <section>
+    <h2>Teams</h2>
+    {data.teams.map(t => (
+      <div class="team">
+        <div class="teamhead"><span>{t.name}</span>
+        <span class="num mut">avg {t.roster.length ? Math.round(t.roster.reduce((s, p) => s + p.elo, 0) / t.roster.length) : '–'}</span></div>
+        {t.roster.map(p => (
+          <div class="prow"><span>{p.name}</span>
+          <div class="bar"><i style={{ width: `${Math.max(4, Math.min(100, (p.elo - 1400) / 4))}%` }} /></div>
+          <span class="num mut">{Math.round(p.elo)}</span></div>
+        ))}
+      </div>
+    ))}
+  </section>
+
+  <section>
+    <h2>2026 Swing leaders</h2>
+    <p class="sub">Impact per 100 rounds.</p>
+    <SwingBoard rows={data.swing} client:load />
+  </section>
+
+  <section>
+    <h2>Experts vs model</h2>
+    <p class="sub">Nine Plat Chat lists merged into one Top 40. Ours is SWING-AR rank among Champions players only.</p>
+    <table>
+      <thead><tr><th>#</th><th>Player</th><th>Ours</th></tr></thead>
+      <tbody>
+        {(() => {
+          const champs = data.swing.filter(p => p.champs);
+          const rank = Object.fromEntries(champs.map((p, i) => [p.name.toLowerCase(), i + 1]));
+          const board = ['Asuna','N4RRATE','something','brawk','lukxo','erde','Dambi','Francis','PatMen','slowly','nAts','xavi8k','Sayonara','s0pp','Meteor','kamo','trent','Cryocells','UdoTan','Timotino','dos9','keiko','BuZz','jawgemo','ZmjjKK','bang','Chronicle','WsLeo','GSR','Erv','Autumn','f0rsakeN','d4v41','Jinggg','Avez','SiuFatBB','NoMan','mada','invy','splash'];
+          return board.map((name, i) => (
+            <tr><td class="num">{i + 1}</td><td>{name}</td>
+            <td class="num">{rank[name.toLowerCase()] ?? '–'}</td></tr>
+          ));
+        })()}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="method">
+    <h2>Method</h2>
+    <div class="team">
+      <div class="teamhead"><span>Player Elo</span></div>
+      <p>Each player keeps one Elo across orgs and years.</p>
+      <p>Team strength is the mean of the current five. New lineups take a chemistry dock.</p>
+      <p>Every offseason moves each rating 30% toward the mean.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>Match model</span></div>
+      <p>The model is logistic regression on team-strength diffs. Inputs include rating, form, schedule strength, map pool, and pistol skill. The fit uses {data.coefs.length} diffs in total.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>Testing</span></div>
+      <p>We test walk-forward. The model trained through 2024 predicts 2025. The model trained through 2025 predicts 2026.</p>
+      {data.validation.filter(v => v.test).map((v) => (
+        <p>Train through {v.train_thru}, test {v.test}: Brier {v.brier}, accuracy {v.acc}, n {v.n_test}.</p>
+      ))}
+      <p>Coinflip Brier is {data.validation.find(v => v.baseline_coinflip_brier)?.baseline_coinflip_brier}.</p>
+      <p>A change ships only if walk-forward Brier improves.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>Simulation</span></div>
+      <p>We run 10,000 sims over the real groups and bracket.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>Player scores</span></div>
+      <p>SWING-AR is a player's total round swing minus replacement level, per 100 rounds.</p>
+      <p>Space counts first engagements per round.</p>
+    </div>
+    <table>
+      <thead><tr><th>Split</th><th>Brier</th><th>Acc</th><th>n</th></tr></thead>
+      <tbody>
+        {data.validation.filter(v => v.test).map((v) => (
+          <tr><td class="num">thru {v.train_thru} → {v.test}</td>
+          <td class="num">{v.brier}</td><td class="num">{v.acc}</td><td class="num">{v.n_test}</td></tr>
+        ))}
+        <tr><td class="num">coinflip</td>
+        <td class="num">{data.validation.find(v => v.baseline_coinflip_brier)?.baseline_coinflip_brier}</td><td class="num">–</td><td class="num">–</td></tr>
+      </tbody>
+    </table>
+  </section>
+  </>)}
+</div>
+</body>
+</html>

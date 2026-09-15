@@ -1,0 +1,9 @@
+# build artifacts
+.astro/
+dist/
+node_modules/
+__pycache__/
+*.pyc
+*.pkl
+*.log
+.DS_Store
