@@ -12,7 +12,7 @@ from . import features as F
 from .config import GROUPS, TEAMS
 from .elo import current_strengths
 
-COLS = [f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff"]
+COLS = [f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff"]
 
 
 def brier(y, p):
@@ -49,12 +49,14 @@ def fit_all(df: pd.DataFrame):
 def pairwise(con: sqlite3.Connection, clf, date, is_po: int = 0) -> tuple[dict, dict]:
     """P(win) + top factors for every ordered Shanghai pair at date."""
     elos = current_strengths(con)
+    elos_fast = current_strengths(con, "player_elo_fast", "team_last_roster_fast")
     coefs = dict(zip(COLS, clf.coef_[0]))
     date = pd.Timestamp(date, tz="UTC")
     probs, factors = {}, {}
     for a, b in itertools.permutations(TEAMS, 2):
         d = F.matchup(con, a, b, date,
-                      elos.get(a, 1500.0) - elos.get(b, 1500.0), is_po)
+                      elos.get(a, 1500.0) - elos.get(b, 1500.0),
+                      elos_fast.get(a, 1500.0) - elos_fast.get(b, 1500.0), is_po)
         x = pd.DataFrame([{c: d.get(c, 0.0) for c in COLS}]).fillna(0.0)
         probs[(a, b)] = float(clf.predict_proba(x)[0, 1])
         contrib = sorted(((c, coefs[c] * d.get(c, 0.0)) for c in COLS),

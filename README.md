@@ -8,8 +8,8 @@ Current best model, walk-forward tested:
 
 | Train through | Test | Brier | Accuracy | n |
 |---|---|---|---|---|
-| 2024 | 2025 | 0.2203 | 64.3% | 504 |
-| 2025 | 2026 | 0.2320 | 63.1% | 588 |
+| 2024 | 2025 | 0.2198 | 63.9% | 504 |
+| 2025 | 2026 | 0.2296 | 63.8% | 588 |
 
 Coinflip Brier is 0.25. Known weakness: overconfidence at extremes (matchups priced at 0.77 win about 0.62). Toss-ups (Elo gap under 15) hit 54%.
 
@@ -28,12 +28,12 @@ Data as shipped: 1,861 series, 4,718 maps, 47k player-maps, 100k rounds, LOCK//I
 
 ## Methodology
 
-Roster-anchored player Elo. Players carry ratings across orgs and years, so a transfer moves skill with the player instead of resetting it. Team strength is the current five-man mean minus a chemistry dock for new lineups. Each offseason regresses ratings 30% toward the mean. Provisional players get a 1.5x K multiplier for their first 10 maps. Updates scale by stage (group/main/playoff), event tier, and each player's map share, so stars move more than passengers.
+Roster-anchored player Elo. Players carry ratings across orgs and years, so a transfer moves skill with the player instead of resetting it. Team strength is the current five-man mean minus a chemistry dock for new lineups. Each offseason regresses ratings 20% toward the mean. Provisional players get a 1.5x K multiplier for their first 10 maps. Updates scale by stage (group/main/playoff), event tier, and each player's map share, so stars move more than passengers. A second, faster Elo (K x1.5, no offseason regression) tracks recent form alongside the long-run rating.
 
-The match model is logistic regression on 18 A-minus-B diffs: team Elo gap, player rating stats (rating, ACS, KAST, ADR, FK-FD), form, winrate, head-to-head, LAN flag, duelist share, coverage, rest, strength of schedule, pistol and retake round-type skill, favorite-map edge, and a playoff-Elo interaction.
+The match model is logistic regression on 19 A-minus-B diffs: team Elo gap, fast form-Elo gap, player rating stats (rating, ACS, KAST, ADR, FK-FD), form, winrate, head-to-head, LAN flag, duelist share, coverage, rest, strength of schedule, pistol and retake round-type skill, favorite-map edge, and a playoff-Elo interaction.
 
-Evaluation is walk-forward: train on all data through year Y, test on year Y+1. Champions 2026 is excluded from tests. A change ships only if it improves walk-forward Brier on both test years without harming either. Tried and rejected under this gate: margin-scaled K, decay weighting, momentum, playoff form, map-level Elo (v2), round-level Elo (v3), GBM, comp matchup matrix, round-win roll-up. The gate notes live in HANDOFF.md.
+Evaluation is walk-forward: train on all data through year Y, test on year Y+1. Champions 2026 is excluded from tests. A change ships only if it improves walk-forward Brier on both test years without harming either. Tried and rejected under this gate: margin-scaled K, decay weighting, recency-decayed K updates, momentum, playoff form, map-level Elo (v2), round-level Elo (v3), GBM, comp matchup matrix, round-win roll-up. The gate notes live in HANDOFF.md.
 
 Forecasting runs 10k Monte Carlo sims over the real GSL groups, then an 8-team double-elimination playoff with playoff-conditioned probabilities.
 
-The site also shows SWING, a round-swing impact metric (display only; it failed the predictive gate twice and stays out of the model), and a merge of Plat Chat expert top-10 lists next to the model's own player ranks.
+The site also shows SWING, a round-swing impact metric (display only; it failed the predictive gate twice and stays out of the model). Swing credit is opponent-adjusted: 1 + (opponent Elo - 1500) / 400 per map, so beating elite teams pays more than farming weak regions. There is also a merge of Plat Chat expert top-10 lists next to the model's own player ranks.

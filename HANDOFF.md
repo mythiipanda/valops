@@ -1,5 +1,12 @@
 # VALOPS handoff — Valorant Champions Shanghai 2026 predictor
 
+## 2026-09-15 log (form-first iteration, swing adjustment, filter fix)
+- SHIPPED: fast form Elo as 19th model feature. Second Elo tracker, K x1.5, no offseason regression (keep 1.0), separate tables (series_elo_fast, player_elo_fast, team_last_roster_fast). Model learns elo_diff (-0.0069) vs elo_fast_diff (+0.009); net = reward for recent form above long-run rating. Walk-forward: 2025 Brier 0.2198 (was 0.2201) acc 63.9% (+0.2pp); 2026 Brier 0.2296 (was 0.2302) acc 63.8% (+1.5pp); pooled 0.2251 < 0.2255 gate. K grid: 1.25/1.5/1.75/2/2.5/3/4/6, optimum flat around 1.5.
+- REJECTED: recency-decayed K updates (half-life 45/90/180/365/730d all worse, pooled 0.2277-0.2288; monotonic toward baseline = destroys long-run signal). Plain momentum/decay had failed before; this was a genuinely different mechanism and still failed. Do not retry.
+- SHIPPED (display): SWING opponent/region adjustment. Per-map swing credit x clamp(1 + (opponent pre-series Elo - 1500)/400, 0.6, 1.6). Uses series_elo pre-series strengths (no leakage); role replacement recomputed post-adjustment. Dist: p5 0.883, median 1.011, p95 1.240. Board still sane (Foxy9 #1, Jemkin #2, primmie #3; XuNa 18->10, keiko 28->17).
+- FIXED: All-2026 swing filter. Component logic verified in jsdom (80 -> 253 -> 80 players); hardened with player_id keys + visible player count. Site copy: formulas for round swing, Space, SWING-AR, opponent adjustment; form-tracker line in win-probability section.
+- Gate: pooled Brier < 0.2255, neither annual cut worse than +0.002. Fast-Elo config in pipeline/config.py (FAST_K_MULT, FAST_TABLES).
+
 ## What this is
 One-page prediction site + Python pipeline. Event: Champions Shanghai, Sep 24 to Oct 18 2026, 16 teams, GSL groups + double-elim playoffs. Site: Astro + React islands, Apple-minimal light design. Live at http://127.0.0.1:4321 via `npx astro preview` in `site/`.
 
@@ -10,9 +17,9 @@ One-page prediction site + Python pipeline. Event: Champions Shanghai, Sep 24 to
 - Status manifest: data/status.json. Write path: `python3 run.py <ingest|elo|train|sim>`.
 
 ## Model (current best, SHIPPED)
-- Roster-anchored player Elo (players carry ratings across orgs; team = 5-man mean minus chemistry dock; offseason 30% regression; provisional fast K; performance-weighted updates). v2 (map-level) and v3 (round-level) both FAILED gates and are shelved but kept in pipeline/elo.py.
-- Logistic regression, 18 features (all A-minus-B diffs): elo, rating, acs, kast, adr, fkfd, form, winrate, h2h, lan, duel, cov, rest, sos, rt_pistol, rt_retake, favlen, elopo (playoff-Elo interaction).
-- Walk-forward Brier: 2025 test 0.2209 acc 63.7%, 2026 test 0.2323 acc 62.8%. Coinflip 0.25.
+- Roster-anchored player Elo (players carry ratings across orgs; team = 5-man mean minus chemistry dock; offseason 20% regression; provisional fast K; performance-weighted updates). v2 (map-level) and v3 (round-level) both FAILED gates and are shelved but kept in pipeline/elo.py. A second fast "form" Elo (K x1.5, no offseason regression) feeds elo_fast_diff to the model since 2026-09-15.
+- Logistic regression, 19 features (all A-minus-B diffs): elo, elo_fast (form), rating, acs, kast, adr, fkfd, form, winrate, h2h, lan, duel, cov, rest, sos, rt_pistol, rt_retake, favlen, elopo (playoff-Elo interaction).
+- Walk-forward Brier: 2025 test 0.2198 acc 63.9%, 2026 test 0.2296 acc 63.8%. Coinflip 0.25.
 - 10k Monte Carlo sims over real groups; playoffs use playoff-conditioned probabilities.
 - Known flaw: overconfident at extremes (0.77 priced wins 0.62). Toss-ups (|elo|<15) are 54%.
 

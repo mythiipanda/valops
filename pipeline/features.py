@@ -167,8 +167,8 @@ def side(tm, ev, tid, opp_a: int, opp_b: int, date, ms=None, mc=None,
     return d
 
 
-def diffs(a: dict, b: dict, elo_diff: float) -> dict:
-    d = {"elo_diff": elo_diff}
+def diffs(a: dict, b: dict, elo_diff: float, elo_fast_diff: float = 0.0) -> dict:
+    d = {"elo_diff": elo_diff, "elo_fast_diff": elo_fast_diff}
     for stat in STATS + EXTRA + RT:
         x, y = a[stat], b[stat]
         d[f"{stat}_diff"] = 0.0 if x is None or y is None else x - y
@@ -178,6 +178,7 @@ def diffs(a: dict, b: dict, elo_diff: float) -> dict:
 def build(con: sqlite3.Connection) -> pd.DataFrame:
     s, tm, ev, ms, mc, me, cl, meta, ss, tr = load(con)
     se = pd.read_sql("SELECT * FROM series_elo", con).set_index("series_id")
+    se_f = pd.read_sql("SELECT * FROM series_elo_fast", con).set_index("series_id")
     out = []
     for _, row in s.iterrows():
         sid, date = row["id"], row["date"]
@@ -194,7 +195,8 @@ def build(con: sqlite3.Connection) -> pd.DataFrame:
         b = side(tm, ev, row["team_b"], row["team_a"], row["team_b"], date,
                  ms, mc, me, cl, meta, sid, cur, ss, tr)
         ed = se.loc[sid, "elo_a"] - se.loc[sid, "elo_b"] if sid in se.index else 0.0
-        feats = diffs(a, b, ed)
+        ef = se_f.loc[sid, "elo_a"] - se_f.loc[sid, "elo_b"] if sid in se_f.index else 0.0
+        feats = diffs(a, b, ed, ef)
         feats["favlen_diff"] = (1 if ed > 0 else -1) * (bo - 3)
         ipo = 1 if stage_k(row.get("stage") or "") == K_PLAYOFF else 0
         feats["elopo_diff"] = ed * ipo
@@ -206,12 +208,12 @@ def build(con: sqlite3.Connection) -> pd.DataFrame:
 
 
 def matchup(con: sqlite3.Connection, ta: int, tb: int, date, elo_diff: float,
-            is_po: int = 0) -> dict:
+            elo_fast_diff: float = 0.0, is_po: int = 0) -> dict:
     """Feature diffs for a hypothetical fixture."""
     _, tm, ev, ms, mc, me, cl, meta, ss, tr = load(con)
     a = side(tm, ev, ta, ta, tb, date, ms, mc, me, cl, meta, None, None, ss, tr)
     b = side(tm, ev, tb, ta, tb, date, ms, mc, me, cl, meta, None, None, ss, tr)
-    d = diffs(a, b, elo_diff)
+    d = diffs(a, b, elo_diff, elo_fast_diff)
     d["favlen_diff"] = 0  # BO3 default pre-match
     d["elopo_diff"] = elo_diff * is_po
     return d

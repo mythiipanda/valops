@@ -28,12 +28,26 @@ def expected(a: float, b: float) -> float:
     return 1.0 / (1.0 + 10 ** ((b - a) / 400.0))
 
 
-def run(con: sqlite3.Connection, event_meta: dict[int, tuple]) -> dict:
-    """event_meta: event_id -> (year, tier). Returns final {player_id: (elo, maps)}."""
-    con.execute("CREATE TABLE IF NOT EXISTS series_elo("
+def run(con: sqlite3.Connection, event_meta: dict[int, tuple],
+        *, k_mult: float = 1.0, offseason_keep: float | None = None,
+        tables: tuple[str, str, str] = ("series_elo", "player_elo",
+                                        "team_last_roster")) -> dict:
+    """event_meta: event_id -> (year, tier). Returns final {player_id: (elo, maps)}.
+
+    k_mult: scale all K (fast "form" Elo uses >1).
+    offseason_keep: None -> config OFFSEASON_KEEP.
+    tables: (series_elo, player_elo, team_last_roster) table names to write.
+    """
+    keep = OFFSEASON_KEEP if offseason_keep is None else offseason_keep
+    se_tbl, pe_tbl, tr_tbl = tables
+    con.execute(f"CREATE TABLE IF NOT EXISTS {se_tbl}("
                 "series_id INTEGER PRIMARY KEY, elo_a REAL, elo_b REAL,"
                 " cont_a REAL, cont_b REAL)")
-    con.execute("DELETE FROM series_elo")
+    con.execute(f"DELETE FROM {se_tbl}")
+    con.execute(f"CREATE TABLE IF NOT EXISTS {pe_tbl}("
+                "player_id INTEGER PRIMARY KEY, elo REAL, maps INTEGER)")
+    con.execute(f"CREATE TABLE IF NOT EXISTS {tr_tbl}("
+                "team_id INTEGER PRIMARY KEY, roster TEXT)")
     rows = con.execute(
         "SELECT id, event_id, date, stage, team_a, team_b, score_a, score_b, winner"
         " FROM series ORDER BY date, id").fetchall()
@@ -49,7 +63,7 @@ def run(con: sqlite3.Connection, event_meta: dict[int, tuple]) -> dict:
             cur_year = year
         if year != cur_year:  # offseason regression
             for p in elo:
-                elo[p] = BASE_ELO + OFFSEASON_KEEP * (elo[p] - BASE_ELO)
+                elo[p] = BASE_ELO + keep * (elo[p] - BASE_ELO)
             cur_year = year
         pm = con.execute(
             "SELECT DISTINCT player_id, team_id FROM player_map WHERE series_id=?",
@@ -85,7 +99,7 @@ def run(con: sqlite3.Connection, event_meta: dict[int, tuple]) -> dict:
         eb, cb = strength(rb, tb)
         exp_a = expected(ea, eb)
         res_a = 1.0 if winner == "A" else 0.0
-        k = stage_k(stage) * TIER_W[tier]
+        k = stage_k(stage) * TIER_W[tier] * k_mult
         for p in ra:
             pk = k * (1.5 if played.get(p, 0) < PROV_MAPS else 1.0)
             elo[p] = elo.get(p, BASE_ELO) + pk * pw.get(p, 1.0) * (res_a - exp_a) * share.get(p, 1.0)
@@ -95,22 +109,24 @@ def run(con: sqlite3.Connection, event_meta: dict[int, tuple]) -> dict:
             elo[p] = elo.get(p, BASE_ELO) + pk * pw.get(p, 1.0) * ((1.0 - res_a) - (1.0 - exp_a)) * share.get(p, 1.0)
             played[p] = played.get(p, 0) + 1
         last_roster[ta], last_roster[tb] = ra, rb
-        con.execute("INSERT INTO series_elo VALUES(?,?,?,?,?)", (sid, ea, eb, ca, cb))
-    con.execute("DELETE FROM player_elo")
-    con.executemany("INSERT INTO player_elo VALUES(?,?,?)",
+        con.execute(f"INSERT INTO {se_tbl} VALUES(?,?,?,?,?)", (sid, ea, eb, ca, cb))
+    con.execute(f"DELETE FROM {pe_tbl}")
+    con.executemany(f"INSERT INTO {pe_tbl} VALUES(?,?,?)",
                     [(p, e, played.get(p, 0)) for p, e in elo.items()])
-    con.execute("DELETE FROM team_last_roster")
-    con.executemany("INSERT INTO team_last_roster VALUES(?,?)",
+    con.execute(f"DELETE FROM {tr_tbl}")
+    con.executemany(f"INSERT INTO {tr_tbl} VALUES(?,?)",
                     [(t, ",".join(map(str, r))) for t, r in last_roster.items()])
     con.commit()
     return {p: (e, played.get(p, 0)) for p, e in elo.items()}
 
 
-def current_strengths(con: sqlite3.Connection) -> dict[int, float]:
+def current_strengths(con: sqlite3.Connection,
+                      pe_tbl: str = "player_elo",
+                      tr_tbl: str = "team_last_roster") -> dict[int, float]:
     """Mean player Elo per team from last seen roster. Unchanged roster = no chem dock."""
-    elos = dict(con.execute("SELECT player_id, elo FROM player_elo").fetchall())
+    elos = dict(con.execute(f"SELECT player_id, elo FROM {pe_tbl}").fetchall())
     out = {}
-    for tid, r in con.execute("SELECT team_id, roster FROM team_last_roster").fetchall():
+    for tid, r in con.execute(f"SELECT team_id, roster FROM {tr_tbl}").fetchall():
         roster = [int(x) for x in r.split(",") if x]
         out[tid] = (sum(elos.get(p, BASE_ELO) for p in roster) / len(roster)) if roster else BASE_ELO
     return out

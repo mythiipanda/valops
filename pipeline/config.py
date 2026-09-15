@@ -63,11 +63,17 @@ EVENTS = [
 TIER_W = {"champions": 1.5, "masters": 1.2, "regional": 0.7}
 
 BASE_ELO = 1500.0
-# ponytail: fixed K table, tune only if London backtest Brier > 0.21
-K_GROUP, K_MAIN, K_PLAYOFF = 20.0, 24.0, 32.0
-CHEM_PENALTY = 50.0  # Elo dock for a fully new lineup, scaled by turnover
-OFFSEASON_KEEP = 0.7  # regress 30% to mean each January
+# tuned 2026-09-15 via grid search on walk-forward Brier (pooled 0.2266 -> 0.2255)
+K_GROUP, K_MAIN, K_PLAYOFF = 8.0, 16.0, 24.0
+CHEM_PENALTY = 70.0  # Elo dock for a fully new lineup, scaled by turnover
+OFFSEASON_KEEP = 0.8  # regress 20% to mean each January
 PROV_MAPS = 10  # provisional players get 1.5x K
+
+# fast "form" tracker: second Elo with K x1.5 and no offseason regression.
+# feeds elo_fast_diff to the model alongside the long-run rating.
+# tuned 2026-09-15 on walk-forward Brier (pooled 0.2255 -> 0.2251)
+FAST_K_MULT = 1.5
+FAST_TABLES = ("series_elo_fast", "player_elo_fast", "team_last_roster_fast")
 
 # Shanghai 2026: team ids + actual GSL groups (A-D)
 TEAMS = {

@@ -10,7 +10,7 @@ from pipeline import features as F
 from pipeline import ingest as I
 from pipeline import model as M
 from pipeline import swing as S
-from pipeline.config import EVENTS
+from pipeline.config import EVENTS, FAST_K_MULT, FAST_TABLES
 from pipeline.db import connect
 
 META = {e: (y, t) for e, y, t, _ in EVENTS}
@@ -25,6 +25,7 @@ def cmd_ingest(args):
 def cmd_elo(_):
     con = connect()
     final = E.run(con, META)
+    E.run(con, META, k_mult=FAST_K_MULT, offseason_keep=1.0, tables=FAST_TABLES)
     elos = sorted(final.values(), key=lambda v: -v[0])[:10]
     print(f"players tracked: {len(final)}")
     con.close()
@@ -53,7 +54,7 @@ def cmd_sim(_):
         print(f"{TEAMS[t]:20s} title {sim['title'][t]:.3f}  advance {sim['advance'][t]:.3f}")
     from pipeline import bracket as B
     X.export(con, clf, coefs, M.evaluate(df), sim, p, factors,
-             S.ar_table(con, 200), B.simulate_all(p), DATE)
+             S.ar_table(con, 200, elo_adjust=True), B.simulate_all(p), DATE)
     print("wrote site/public/data.json")
     con.close()
 

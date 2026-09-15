@@ -96,24 +96,30 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   </section>
 
   <section class="method">
-    <h2>Method</h2>
+    <h2>How it works</h2>
     <div class="team">
       <div class="teamhead"><span>Player Elo</span></div>
-      <p>Each player keeps one Elo across orgs and years.</p>
-      <p>Team strength is the mean of the current five. New lineups take a chemistry dock.</p>
-      <p>Every offseason moves each rating 30% toward the mean.</p>
+      <div class="formula">R&#8242; = R + K(S &#8722; E)</div>
+      <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
+      <p>A player's rating moves toward their results. Beating a stronger team moves it more.</p>
+      <p>A team's rating is the mean of its five players, minus a penalty when the lineup is new.</p>
     </div>
     <div class="team">
-      <div class="teamhead"><span>Match model</span></div>
-      <p>The model is logistic regression on team-strength diffs. Inputs include rating, form, schedule strength, map pool, and pistol skill. The fit uses {data.coefs.length} diffs in total.</p>
+      <div class="teamhead"><span>Win probability</span></div>
+      <div class="formula">P(A beats B) = 1 / (1 + e<sup>&#8722;w&#183;x</sup>)</div>
+      <p>The model weighs rating gaps and form: recent results, schedule strength, map pool, pistol rounds.</p>
+      <p>Two ratings feed it. A long-run Elo for true strength, and a faster form Elo that moves 1.5x on every result and never regresses in the offseason.</p>
     </div>
     <div class="team">
-      <div class="teamhead"><span>Testing</span></div>
-      <p>We test walk-forward. The model trained through 2024 predicts 2025. The model trained through 2025 predicts 2026.</p>
-      {data.validation.filter(v => v.test).map((v) => (
-        <p>Train through {v.train_thru}, test {v.test}: Brier {v.brier}, accuracy {v.acc}, n {v.n_test}.</p>
-      ))}
-      <p>Coinflip Brier is {data.validation.find(v => v.baseline_coinflip_brier)?.baseline_coinflip_brier}.</p>
+      <div class="teamhead"><span>Evaluation</span></div>
+      <p>We train on past years and test on the next one. Lower Brier is better.</p>
+      <div class="brier">
+        {data.validation.filter(v => v.test).map((v) => (
+          <div class="brow"><span class="blabel">{v.test} model</span><div class="btrack"><i style={`width: ${(v.brier / 0.3 * 100).toFixed(1)}%`}></i></div><span class="num">{v.brier.toFixed(3)}</span></div>
+          <div class="brow dim"><span class="blabel">{v.test} coinflip</span><div class="btrack"><i style="width: 83.3%"></i></div><span class="num">0.250</span></div>
+        ))}
+      </div>
+      <p>At the extremes the model is overconfident: matchups priced at 77% win 62% of the time.</p>
       <p>A change ships only if walk-forward Brier improves.</p>
     </div>
     <div class="team">
@@ -122,8 +128,12 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
     </div>
     <div class="team">
       <div class="teamhead"><span>Player scores</span></div>
-      <p>SWING-AR is a player's total round swing minus replacement level, per 100 rounds.</p>
-      <p>Space counts first engagements per round.</p>
+      <div class="formula">swing(round) = P(win | score + 1) &#8722; P(win | score)</div>
+      <p>Every round is worth its win-probability jump. An 11-11 round moves the needle far more than a 12-3 round, so clutch rounds pay more. A map's total swing is split across the winning five by kills, first kills, assists, and survival, weighted by role.</p>
+      <div class="formula">Space = (first kills + first deaths) / rounds</div>
+      <p>Space is engagement rate: how often a player takes the first duel of a round.</p>
+      <div class="formula">SWING-AR = (swing &#8722; replacement swing) / rounds &#215; 100</div>
+      <p>Replacement level is the 20th percentile of the player's role, so a duelist is judged against duelists. Swing is opponent-adjusted first: credit scales as 1 + (opponent Elo &#8722; 1500) / 400, so beating an elite team pays more than farming a weak region.</p>
     </div>
     <table>
       <thead><tr><th>Split</th><th>Brier</th><th>Acc</th><th>n</th></tr></thead>

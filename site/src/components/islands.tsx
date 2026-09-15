@@ -64,7 +64,7 @@ export function OddsTable({ teams }: { teams: Team[] }) {
   );
 }
 
-export type SwingRow = { name: string; ar100: number; rounds: number; champs: boolean; space?: number };
+export type SwingRow = { player_id: number; name: string; ar100: number; rounds: number; champs: boolean; space?: number };
 
 export function SwingBoard({ rows }: { rows: SwingRow[] }) {
   const [champs, setChamps] = useState(true);
@@ -77,12 +77,13 @@ export function SwingBoard({ rows }: { rows: SwingRow[] }) {
           <option value="champs">Champions players</option>
           <option value="all">All 2026</option>
         </select>
+        <span className="mut">{list.length} players</span>
       </div>
       <table>
         <thead><tr><th>#</th><th>Player</th><th>SWING-AR</th><th>Space</th><th>Rounds</th></tr></thead>
         <tbody>
           {list.map((p, i) => (
-            <tr key={p.name}>
+            <tr key={p.player_id}>
               <td className="num">{i + 1}</td><td>{p.name}</td>
               <td className="num">{p.ar100}</td><td className="num">{p.space ?? '–'}</td><td className="num">{p.rounds}</td>
             </tr>

@@ -86,6 +86,38 @@ def credit_map(rows: list[dict], pool: float) -> dict:
             for r, f, k, a, s in zip(rows, fk, kd, ap, sv)}
 
 
+def opponent_mult(con: sqlite3.Connection, lo: float = 0.6,
+                    hi: float = 1.6) -> dict:
+    """Per-map credit multiplier from opponent pre-series Elo.
+
+    mult = clamp(1 + (opp_elo - 1500) / 400, lo, hi). 400 is the Elo scale:
+    a 100-point stronger opponent pays 25% more credit, a 100-point weaker
+    one 25% less. Opponent Elo bakes in region strength, so farming a weak
+    region pays ~0.65x while beating elite INTL opposition pays ~1.4x.
+    series_elo holds pre-series strengths (no leakage).
+    """
+    se = {sid: (ea, eb) for sid, ea, eb
+          in con.execute("SELECT series_id, elo_a, elo_b FROM series_elo")}
+    tm = {sid: (ta, tb) for sid, ta, tb
+          in con.execute("SELECT id, team_a, team_b FROM series")}
+    out = {}
+    maps = con.execute(
+        "SELECT DISTINCT ps.series_id, ps.game FROM player_swing ps").fetchall()
+    pteam = {}
+    for sid, game, pid, tid in con.execute(
+            "SELECT ps.series_id, ps.game, ps.player_id, pm.team_id"
+            " FROM player_swing ps JOIN player_map pm ON ps.series_id=pm.series_id"
+            " AND ps.game=pm.game AND ps.player_id=pm.player_id"):
+        pteam[(sid, game)] = tid
+    for sid, game in maps:
+        ta, tb = tm.get(sid, (None, None))
+        ea, eb = se.get(sid, (1500.0, 1500.0))
+        wt = pteam.get((sid, game))
+        opp_elo = eb if wt == ta else ea
+        out[(sid, game)] = min(hi, max(lo, 1.0 + (opp_elo - 1500.0) / 400.0))
+    return out
+
+
 def run(con: sqlite3.Connection):
     con.execute("CREATE TABLE IF NOT EXISTS map_swing(series_id INTEGER, game INTEGER,"
                 " pool REAL, PRIMARY KEY(series_id, game))")
@@ -117,17 +149,30 @@ def run(con: sqlite3.Connection):
 
 
 def ar_table(con: sqlite3.Connection, min_rounds: int = 100,
-             since: str = "2026-01-01") -> list:
+             since: str = "2026-01-01", elo_adjust: bool = False) -> list:
     """Positional replacement SWING-AR per 100 rounds.
 
     NBA VORP idea: a replacement Controller is not a replacement Duelist.
     Each role gets its own 20th-percentile baseline. Subtraction keeps it stable.
     """
     from .mapcomp import ROLE
+    mult = opponent_mult(con) if elo_adjust else {}
+    if mult:
+        con.execute("CREATE TEMP TABLE IF NOT EXISTS _mapmult("
+                    "series_id INTEGER, game INTEGER, mult REAL,"
+                    " PRIMARY KEY(series_id, game))")
+        con.execute("DELETE FROM _mapmult")
+        con.executemany("INSERT INTO _mapmult VALUES(?,?,?)",
+                        [(s, g, m) for (s, g), m in mult.items()])
+        swexpr = "SUM(ps.swing * COALESCE(mm.mult, 1.0))"
+        mmjoin = "LEFT JOIN _mapmult mm ON ps.series_id=mm.series_id AND ps.game=mm.game"
+    else:
+        swexpr, mmjoin = "SUM(ps.swing)", ""
     rows = con.execute(
-        "SELECT ps.player_id, SUM(ps.swing), SUM(pm.rounds), pm.name"
+        f"SELECT ps.player_id, {swexpr}, SUM(pm.rounds), pm.name"
         " FROM player_swing ps JOIN player_map pm"
         " ON ps.series_id=pm.series_id AND ps.game=pm.game AND ps.player_id=pm.player_id"
+        f" {mmjoin}"
         " JOIN series s ON ps.series_id=s.id WHERE s.date >= ?"
         " GROUP BY ps.player_id", (since,)).fetchall()
     eng = con.execute(
