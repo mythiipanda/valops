@@ -71,6 +71,36 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   </section>
 
   <section>
+    <table>
+      <thead><tr><th></th>
+        <th title="Attack round win %">atk</th>
+        <th title="Defense round win %">def</th>
+        <th title="Pistol round win %">pistol</th>
+        <th title="First-half round win %">1st</th>
+        <th title="Second-half round win %">2nd</th>
+        <th title="Share of rounds played in overtime">OT</th>
+        <th title="Maps won after trailing by 4+ rounds">comeback</th>
+        <th title="Maps lost after leading by 4+ rounds">choke</th>
+      </tr></thead>
+      <tbody>
+        {(() => {
+          const rows = data.dna;
+          const keys = ['atk','dfn','pistol','h1','h2','ot','comeback','choke'];
+          const lo = {}, hi = {};
+          keys.forEach(k => { lo[k] = Math.min(...rows.map(r => r[k])); hi[k] = Math.max(...rows.map(r => r[k])); });
+          return rows.map(r => (
+            <tr><td>{r.name}</td>{keys.map(k => (
+              (r[k] === hi[k] || r[k] === lo[k])
+                ? <td class="num"><strong>{r[k].toFixed(1)}</strong></td>
+                : <td class="num">{r[k].toFixed(1)}</td>
+            ))}</tr>
+          ));
+        })()}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
     <h2>2026 Swing leaders</h2>
     <p class="sub">Impact per 100 rounds.</p>
     <SwingBoard rows={data.swing} client:load />
