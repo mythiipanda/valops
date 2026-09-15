@@ -172,6 +172,8 @@ def diffs(a: dict, b: dict, elo_diff: float, elo_fast_diff: float = 0.0) -> dict
     for stat in STATS + EXTRA + RT:
         x, y = a[stat], b[stat]
         d[f"{stat}_diff"] = 0.0 if x is None or y is None else x - y
+    # conviction: elo edge and recent form pointing the same way
+    d["elo_x_form_diff"] = d["elo_diff"] * d["form_diff"] / 100.0
     return d
 
 

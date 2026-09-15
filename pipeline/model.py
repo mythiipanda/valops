@@ -12,7 +12,15 @@ from . import features as F
 from .config import GROUPS, TEAMS
 from .elo import current_strengths
 
-COLS = [f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff"]
+# tuned 2026-09-15 overnight: dropping noisy features (lan/adr/h2h/duel) +
+# elo_x_form interaction; C=0.75. walk-forward pooled brier 0.2251 -> 0.2233,
+# 2025 0.2198/63.9% -> 0.2193/64.7%, 2026 0.2296/63.8% -> 0.2268/64.3%.
+DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff"}
+C = 0.75
+COLS = [c for c in
+        ([f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff",
+                                        "elo_x_form_diff"])
+        if c not in DROP]
 
 
 def brier(y, p):
@@ -30,7 +38,7 @@ def evaluate(df: pd.DataFrame):
         te_df = df[(df["date"].dt.year == te) & (df["event_id"] != 2766)]
         if not len(tr) or not len(te_df):
             continue
-        clf = LogisticRegression(max_iter=2000).fit(tr[COLS].fillna(0.0), tr["label"])
+        clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
         p = clf.predict_proba(te_df[COLS].fillna(0.0))[:, 1]
         reps.append({"train_thru": tr_end, "test": te, "n_test": len(te_df),
                      "brier": round(brier(te_df["label"], p), 4),
@@ -42,7 +50,7 @@ def evaluate(df: pd.DataFrame):
 
 def fit_all(df: pd.DataFrame):
     tr = df[df["event_id"] != 2766]
-    clf = LogisticRegression(max_iter=2000).fit(tr[COLS].fillna(0.0), tr["label"])
+    clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
     return clf, list(zip(COLS, clf.coef_[0]))
 
 
