@@ -98,17 +98,24 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   <section class="method">
     <h2>How it works</h2>
     <div class="team">
+      <div class="teamhead"><span>The data</span></div>
+      <p>Every pro series, map by map and round by round: scores, kills, agents, economy. It lands in one database of teams, players, and maps, and every feature below is computed from history before match day. Nothing peeks at the future.</p>
+    </div>
+    <div class="team">
       <div class="teamhead"><span>Player Elo</span></div>
       <div class="formula">R&#8242; = R + K(S &#8722; E)</div>
       <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
-      <p>A player's rating moves toward their results. Beating a stronger team moves it more.</p>
-      <p>A team's rating is the mean of its five players, minus a penalty when the lineup is new.</p>
+      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more, and big stages move ratings more than group games. Every offseason, ratings drift 30% back toward average.</p>
+      <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. Two trackers run side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The gap between them reads as form.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>The features</span></div>
+      <p>Each matchup becomes a list of A-minus-B gaps: rating, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), series win rate, strength of schedule, days of rest, agent-composition coverage, pistol and retake rates. Small samples get smoothed toward average, so a three-map hot streak cannot break the math.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>Win probability</span></div>
       <div class="formula">P(A beats B) = 1 / (1 + e<sup>&#8722;w&#183;x</sup>)</div>
-      <p>The model weighs rating gaps and form: recent results, schedule strength, map pool, pistol rounds.</p>
-      <p>Two ratings feed it. A long-run Elo for true strength, and a faster form Elo that moves 1.5x on every result and never regresses in the offseason.</p>
+      <p>A plain logistic regression turns the gaps into a probability. The weights are readable and the rating gaps carry the most weight.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>Evaluation</span></div>
