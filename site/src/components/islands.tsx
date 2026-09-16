@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 
 export type Team = { id: number; name: string; title: number; advance: number;
+  elo?: number; fast?: number; group?: string;
   roster: { id: number; name: string; elo: number }[] };
 export type Matchup = { a: number; b: number; p: number;
   factors: { f: string; v: number }[] };
@@ -56,6 +57,40 @@ export function OddsTable({ teams }: { teams: Team[] }) {
               <td className="num">{(t.advance * 100).toFixed(1)}%</td>
               <td style={{ minWidth: 90 }}><div className="bar"><i
                 style={{ width: `${t.title * 100}%` }} /></div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function EloTable({ teams }: { teams: Team[] }) {
+  const [group, setGroup] = useState('all');
+  const rows = useMemo(() => teams
+    .filter((t) => group === 'all' || t.group === group)
+    .map((t) => ({ ...t, delta: (t.fast ?? 0) - (t.elo ?? 0) }))
+    .sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0)), [teams, group]);
+  return (
+    <div>
+      <div className="row island-filter">
+        <select aria-label="Group filter" value={group} onChange={(e) => setGroup(e.target.value)}>
+          <option value="all">All groups</option>
+          {['A', 'B', 'C', 'D'].map((g) => <option key={g} value={g}>Group {g}</option>)}
+        </select>
+        <span className="mut">{rows.length} teams</span>
+      </div>
+      <table>
+        <thead><tr><th>#</th><th>Team</th><th>Grp</th><th>Elo</th><th>Form</th>
+          <th title="Fast tracker minus slow tracker">&#916;</th></tr></thead>
+        <tbody>
+          {rows.map((t, i) => (
+            <tr key={t.id}>
+              <td className="num">{i + 1}</td><td>{t.name}</td>
+              <td className="mut">{t.group ?? '–'}</td>
+              <td className="num">{Math.round(t.elo ?? 0)}</td>
+              <td className="num">{Math.round(t.fast ?? 0)}</td>
+              <td className="num">{t.delta >= 0 ? '+' : ''}{Math.round(t.delta)}</td>
             </tr>
           ))}
         </tbody>

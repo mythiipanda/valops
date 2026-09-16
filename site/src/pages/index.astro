@@ -1,6 +1,6 @@
 ---
 import '../styles.css';
-import { Matchup, OddsTable, SwingBoard } from '../components/islands';
+import { Matchup, OddsTable, SwingBoard, EloTable } from '../components/islands';
 import { readFileSync, existsSync } from 'node:fs';
 
 const has = existsSync(new URL('../../public/data.json', import.meta.url));
@@ -53,6 +53,12 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
         </table>
       </div>
     ))}
+  </section>
+
+  <section>
+    <h2>Team Elo</h2>
+    <p class="sub">Roster-mean player Elo. Form is the fast tracker; &#916; is fast minus slow.</p>
+    <EloTable teams={data.teams} client:load />
   </section>
 
   <section>

@@ -14,7 +14,7 @@ from pipeline.config import EVENTS, FAST_K_MULT, FAST_TABLES
 from pipeline.db import connect
 
 META = {e: (y, t) for e, y, t, _ in EVENTS}
-DATE = "2026-09-24"
+DATE = "2026-09-16"
 
 
 def cmd_ingest(args):
