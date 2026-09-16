@@ -89,7 +89,7 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
         <select aria-label="Player pool" value={champs ? 'champs' : 'all'}
           onChange={(e) => setChamps(e.target.value === 'champs')}>
           <option value="champs">Champions players</option>
-          <option value="all">All 2026</option>
+          <option value="all">All players</option>
         </select>
         <span className="mut">{list.length} players</span>
       </div>
