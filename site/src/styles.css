@@ -154,14 +154,16 @@ tbody tr:hover { background: rgba(0, 0, 0, 0.02); }
 .groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; }
 .group { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px 16px; }
 .grouphead { font-weight: 700; font-size: 15px; margin-bottom: 12px; }
-.gmatches { display: grid; gap: 10px; margin-bottom: 16px; }
-.gmatch { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-.gteam { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; line-height: 22px; }
-.gteam .num { font-variant-numeric: tabular-nums; color: var(--gray); }
-.gteam.fav { font-weight: 650; }
-.gteam.fav .num { color: var(--ink); }
-.gsplit { height: 6px; border-radius: 3px; background: var(--line); margin: 7px 0; overflow: hidden; }
-.gsplit > i { display: block; height: 100%; background: var(--accent); opacity: 0.8; }
+.gslwrap { overflow-x: auto; margin-bottom: 16px; }
+.gsl { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 10px; min-width: 500px; }
+.gcol { display: flex; flex-direction: column; gap: 10px; }
+.ground { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray); }
+.gslmatch { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+.gslres { font-size: 12px; line-height: 16px; color: var(--gray); margin-top: 5px; }
+.pteam { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 13.5px; line-height: 22px; }
+.pteam .num { color: var(--gray); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.pteam.fav { font-weight: 650; }
+.pteam.fav .num { color: var(--ink); }
 .gadvance-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--gray); margin-bottom: 10px; }
 .grow { margin-bottom: 12px; }
 .grow:last-child { margin-bottom: 0; }

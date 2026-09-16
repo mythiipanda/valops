@@ -7,6 +7,8 @@ const has = existsSync(new URL('../../public/data.json', import.meta.url));
 const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', import.meta.url), 'utf8')) : null;
 const hasComps = existsSync(new URL('../../public/comps.json', import.meta.url));
 const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.json', import.meta.url), 'utf8')) : null;
+
+const gname = (b: any, id: number) => b.teams.find((t: any) => t.id === id)?.name ?? String(id);
 ---
 <html lang="en">
 <head>
@@ -35,29 +37,44 @@ const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.jso
 
   <section>
     <h2>Groups</h2>
-    <p class="sub">Opener win odds, then advance odds.</p>
+    <p class="sub">Most likely path through each group — favorites win every match. Full advance odds below each bracket.</p>
     <div class="groups">
     {Object.entries(data.bracket).map(([g, b]) => (
       <div class="group">
         <div class="grouphead"><span>Group {g}</span></div>
-        <div class="gmatches">
-          {b.openers.map(o => {
-            const A = data.teams.find(t => t.id === o.a);
-            const B = data.teams.find(t => t.id === o.b);
-            const pa = o.p * 100, pb = 100 - pa;
-            return (
-              <div class="gmatch">
-                <div class={`gteam${pa >= 50 ? ' fav' : ''}`}>
-                  <span>{A?.name}</span><span class="num">{pa.toFixed(0)}</span>
-                </div>
-                <div class="gsplit"><i style={{ width: `${pa}%` }} /></div>
-                <div class={`gteam${pb > 50 ? ' fav' : ''}`}>
-                  <span>{B?.name}</span><span class="num">{pb.toFixed(0)}</span>
-                </div>
+        <div class="gslwrap"><div class="gsl">
+          <div class="gcol">
+            <div class="ground">Openers</div>
+            {b.gsl.openers.map(m => { const pa = m.w === m.a ? m.pw : 1 - m.pw; return (
+              <div class="gslmatch">
+                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
+                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
               </div>
-            );
-          })}
-        </div>
+            ); })}
+          </div>
+          <div class="gcol">
+            <div class="ground">Winners · Elim</div>
+            {[b.gsl.winners, b.gsl.elim].map(m => { const pa = m.w === m.a ? m.pw : 1 - m.pw;
+              const res = m === b.gsl.winners ? `${gname(b, m.w)} advances 2-0` : `${gname(b, m.l)} eliminated`;
+              return (
+              <div class="gslmatch">
+                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
+                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
+                <div class="gslres">{res}</div>
+              </div>
+            ); })}
+          </div>
+          <div class="gcol">
+            <div class="ground">Decider</div>
+            {(() => { const m = b.gsl.decider; const pa = m.w === m.a ? m.pw : 1 - m.pw; return (
+              <div class="gslmatch">
+                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
+                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
+                <div class="gslres">{gname(b, m.w)} advances 2-1</div>
+              </div>
+            ); })()}
+          </div>
+        </div></div>
         <div class="gadvance">
           <div class="gadvance-title">To advance</div>
           {b.odds.sort((x, y) => y.adv - x.adv).map(o => (

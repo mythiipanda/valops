@@ -38,10 +38,32 @@ def group_probs(teams: list[int], p: dict) -> dict:
     return out
 
 
+def _fav(p: dict, a: int, b: int) -> tuple:
+    """Modal winner of a vs b: (winner, loser, P(winner beats loser))."""
+    pa = _p(p, a, b)
+    return (a, b, pa) if pa >= 0.5 else (b, a, 1.0 - pa)
+
+
+def _m(a: int, b: int, w: int, l: int, pw: float) -> dict:
+    return {"a": a, "b": b, "w": w, "l": l, "pw": round(pw, 3)}
+
+
 def bracket_view(teams: list[int], p: dict) -> dict:
-    """Human-readable bracket: openers with probs + advancement odds."""
+    """Human-readable bracket: openers with probs + advancement odds,
+    plus the modal GSL path (favorites win every match)."""
     t0, t1, t2, t3 = teams
     probs = group_probs(teams, p)
+    w1, l1, p1 = _fav(p, t0, t1)
+    w2, l2, p2 = _fav(p, t2, t3)
+    aw, al, paw = _fav(p, w1, w2)   # winners' match: aw advances 2-0
+    ew, el, pew = _fav(p, l1, l2)   # elimination match: el goes home
+    dw, dl, pdw = _fav(p, al, ew)   # decider: dw advances 2-1
+    gsl = {
+        "openers": [_m(t0, t1, w1, l1, p1), _m(t2, t3, w2, l2, p2)],
+        "winners": _m(w1, w2, aw, al, paw),
+        "elim": _m(l1, l2, ew, el, pew),
+        "decider": _m(al, ew, dw, dl, pdw),
+    }
     return {
         "teams": [{"id": t, "name": TEAMS[t]} for t in teams],
         "openers": [
@@ -52,6 +74,7 @@ def bracket_view(teams: list[int], p: dict) -> dict:
                   "adv": round(probs[t]["adv"], 4),
                   "first": round(probs[t]["first"], 4),
                   "second": round(probs[t]["second"], 4)} for t in teams],
+        "gsl": gsl,
     }
 
 
