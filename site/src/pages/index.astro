@@ -1,10 +1,12 @@
 ---
 import '../styles.css';
-import { Matchup, OddsTable, SwingBoard, EloTable } from '../components/islands';
+import { Matchup, OddsTable, SwingBoard, EloTable, CompBoard } from '../components/islands';
 import { readFileSync, existsSync } from 'node:fs';
 
 const has = existsSync(new URL('../../public/data.json', import.meta.url));
 const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', import.meta.url), 'utf8')) : null;
+const hasComps = existsSync(new URL('../../public/comps.json', import.meta.url));
+const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.json', import.meta.url), 'utf8')) : null;
 ---
 <html lang="en">
 <head>
@@ -111,6 +113,14 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
     <p class="sub">Round-win probability added per 100 rounds, agent-adjusted and shrunk. The full-year view weights recent form and international games more; use the stage filter to slice it.</p>
     <SwingBoard boards={data.swing_boards} client:load />
   </section>
+
+  {comps && (
+  <section>
+    <h2>Best comps</h2>
+    <p class="sub">Best 5-agent comp per map from 2026 games, scored by wins above Elo expectation. Shrunk toward zero by sample size.</p>
+    <CompBoard comps={comps} client:load />
+  </section>
+  )}
 
   <section>
     <h2>Experts vs model</h2>

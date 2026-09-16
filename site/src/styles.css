@@ -132,3 +132,16 @@ tbody tr:hover { background: rgba(0, 0, 0, 0.02); }
   .prow { grid-template-columns: 1fr 80px 44px; }
   .brow { grid-template-columns: 88px 1fr 40px; }
 }
+
+.maptabs { gap: 10px; margin-bottom: 14px; }
+.maptab { border: 1px solid var(--line); background: none; padding: 0; border-radius: 6px; overflow: hidden; cursor: pointer; width: 96px; }
+.maptab img { display: block; width: 100%; height: 54px; object-fit: cover; }
+.maptab span { display: block; font-size: 12px; line-height: 18px; padding: 2px 0 4px; color: var(--gray); }
+.maptab.on { border-color: var(--ink); }
+.maptab.on span { color: var(--ink); font-weight: 600; }
+.compagents { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 8px; }
+.agent { text-align: center; width: 64px; }
+.agent img { display: block; width: 56px; height: 56px; margin: 0 auto 2px; border-radius: 8px; background: var(--line); }
+.agent span { font-size: 12px; line-height: 16px; color: var(--soft); }
+.compstats { font-size: 13px; line-height: 20px; margin: 0; }
+.compstats strong { color: var(--ink); }

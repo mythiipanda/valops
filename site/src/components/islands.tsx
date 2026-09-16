@@ -228,3 +228,37 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
     </div>
   );
 }
+
+export type CompAgent = { name: string; img: string };
+export type MapComp = { map: string; map_img: string; agents: CompAgent[];
+  edge: number; w: number; l: number; maps: number; pick_rate: number };
+
+export function CompBoard({ comps }: { comps: MapComp[] }) {
+  const [sel, setSel] = useState(comps[0]?.map);
+  const c = comps.find((x) => x.map === sel) ?? comps[0];
+  if (!c) return null;
+  return (
+    <div>
+      <div className="row maptabs">
+        {comps.map((m) => (
+          <button key={m.map} onClick={() => setSel(m.map)}
+            className={'maptab' + (m.map === c.map ? ' on' : '')} aria-label={m.map}>
+            <img src={m.map_img} alt={m.map} loading="lazy" />
+            <span>{m.map}</span>
+          </button>
+        ))}
+      </div>
+      <div className="compagents">
+        {c.agents.map((a) => (
+          <div className="agent" key={a.name}>
+            <img src={a.img} alt={a.name} loading="lazy" />
+            <span>{a.name}</span>
+          </div>
+        ))}
+      </div>
+      <p className="mut compstats">
+        {c.w}-{c.l} on {c.maps} maps · <strong>+{(c.edge * 100).toFixed(1)}</strong> pts above Elo expectation · picked {(c.pick_rate * 100).toFixed(1)}% of {c.map} maps
+      </p>
+    </div>
+  );
+}
