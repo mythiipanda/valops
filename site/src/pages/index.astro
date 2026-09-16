@@ -36,25 +36,42 @@ const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.jso
   <section>
     <h2>Groups</h2>
     <p class="sub">Opener win odds, then advance odds.</p>
+    <div class="groups">
     {Object.entries(data.bracket).map(([g, b]) => (
-      <div class="team">
-        <div class="teamhead"><span>Group {g}</span></div>
-        {b.openers.map(o => (
-          <div class="prow"><span>{data.teams.find(t => t.id === o.a)?.name} vs {data.teams.find(t => t.id === o.b)?.name}</span>
-          <div class="bar"><i style={{ width: `${o.p * 100}%` }} /></div>
-          <span class="num">{(o.p * 100).toFixed(0)}</span></div>
-        ))}
-        <table class="sortable">
-          <tbody>
-            {b.odds.sort((x, y) => y.adv - x.adv).map(o => (
-              <tr><td>{o.name}</td>
-              <td class="num">{(o.adv * 100).toFixed(1)}</td>
-              <td class="detail">2-0 {(o.first * 100).toFixed(0)} · 2-1 {(o.second * 100).toFixed(0)}</td></tr>
-            ))}
-          </tbody>
-        </table>
+      <div class="group">
+        <div class="grouphead"><span>Group {g}</span></div>
+        <div class="gmatches">
+          {b.openers.map(o => {
+            const A = data.teams.find(t => t.id === o.a);
+            const B = data.teams.find(t => t.id === o.b);
+            const pa = o.p * 100, pb = 100 - pa;
+            return (
+              <div class="gmatch">
+                <div class={`gteam${pa >= 50 ? ' fav' : ''}`}>
+                  <span>{A?.name}</span><span class="num">{pa.toFixed(0)}</span>
+                </div>
+                <div class="gsplit"><i style={{ width: `${pa}%` }} /></div>
+                <div class={`gteam${pb > 50 ? ' fav' : ''}`}>
+                  <span>{B?.name}</span><span class="num">{pb.toFixed(0)}</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div class="gadvance">
+          <div class="gadvance-title">To advance</div>
+          {b.odds.sort((x, y) => y.adv - x.adv).map(o => (
+            <div class="grow">
+              <div class="grow-top"><span class="gname">{o.name}</span>
+              <span class="num">{(o.adv * 100).toFixed(0)}</span></div>
+              <div class="bar"><i style={{ width: `${o.adv * 100}%` }} /></div>
+              <div class="gdetail">2-0 {(o.first * 100).toFixed(0)} · 2-1 {(o.second * 100).toFixed(0)}</div>
+            </div>
+          ))}
+        </div>
       </div>
     ))}
+    </div>
   </section>
 
   <section>
