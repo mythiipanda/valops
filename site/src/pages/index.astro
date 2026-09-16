@@ -24,7 +24,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   <section>
     <h2>Power rankings</h2>
     <p class="sub">Pure team strength, no draw involved. Ordered by Elo; Form is Stage-2-only.</p>
-    <table>
+    <table class="sortable">
       <thead><tr><th>#</th><th>Team</th><th>Region</th><th>Elo</th><th>Form</th></tr></thead>
       <tbody>
         {(() => {
@@ -65,7 +65,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
           <div class="bar"><i style={{ width: `${o.p * 100}%` }} /></div>
           <span class="num">{(o.p * 100).toFixed(0)}</span></div>
         ))}
-        <table>
+        <table class="sortable">
           <tbody>
             {b.odds.sort((x, y) => y.adv - x.adv).map(o => (
               <tr><td>{o.name}</td>
@@ -199,7 +199,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
       <div class="formula">Round Swing = &#931; (swing &#8722; agent average) / rounds &#215; 100</div>
       <p>Each player is measured against the prior-year average for their agent, so a duelist is judged against duelists. The result is per 100 rounds, then shrunk toward zero for small samples. The full-year board weights recent splits more heavily and counts international games more than regional ones, the same way the model trusts recent form and big stages; stage filters show each split raw. This replaced the old kill-share swing and the space metric.</p>
     </div>
-    <table>
+    <table class="sortable">
       <thead><tr><th>Split</th><th>Brier</th><th>Acc</th><th>n</th></tr></thead>
       <tbody>
         {data.validation.filter(v => v.test).map((v) => (
