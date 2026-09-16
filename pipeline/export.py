@@ -1,14 +1,45 @@
 """Export data.json for the one-page frontend."""
 
+import glob
 import json
 import sqlite3
+from collections import Counter, defaultdict
 from pathlib import Path
 
 import pandas as pd
 
-from .config import GROUPS, TEAMS
+from .config import EVENTS, GROUPS, TEAMS
 
 STAGE2_EVENTS = [2977, 2976, 2776, 2978]
+REGIONS = ("AM", "EMEA", "PAC", "CN")
+RAW = Path(__file__).parent.parent / "data" / "raw"
+
+
+def team_meta() -> tuple[dict, dict]:
+    """team_id -> name, team_id -> region (most common 2026 regional league)."""
+    ev_region = {e[0]: e[3] for e in EVENTS}
+    ev_year = {e[0]: e[1] for e in EVENTS}
+    names: dict = {}
+    regs: dict = defaultdict(list)
+    for f in glob.glob(str(RAW / "event_*.json")):
+        try:
+            d = json.load(open(f))
+        except OSError:
+            continue
+        for m in d.get("matches", []):
+            if m.get("status") != "completed" or len(m.get("teams", [])) != 2:
+                continue
+            eid = m["event_id"]
+            for t in m["teams"]:
+                names[t["id"]] = t["name"]
+                regs[t["id"]].append((ev_year.get(eid), ev_region.get(eid)))
+    regions = {}
+    for tid, evs in regs.items():
+        r26 = [rg for (yr, rg) in evs if yr == 2026 and rg in REGIONS]
+        pool = r26 or [rg for (_, rg) in evs if rg in REGIONS]
+        if pool:
+            regions[tid] = Counter(pool).most_common(1)[0][0]
+    return names, regions
 
 
 def team_dna(con: sqlite3.Connection) -> list:
@@ -57,6 +88,34 @@ def team_dna(con: sqlite3.Connection) -> list:
     return out
 
 
+def stage2_form(con) -> dict:
+    """Stage-2-only team Elo: pre-Stage-2 slow rating, updated on Stage 2
+    series alone with the fast (1.5x) K. Answers 'how good lately', not
+    'how good all year'."""
+    from .elo import expected, stage_k
+    s2 = ",".join(map(str, STAGE2_EVENTS))
+    priors: dict = {}
+    for ta, tb, ea, eb in con.execute(
+            "SELECT s.team_a, s.team_b, e.elo_a, e.elo_b FROM series s "
+            "JOIN series_elo e ON e.series_id = s.id "
+            f"WHERE s.event_id IN ({s2}) ORDER BY s.date, s.id"):
+        priors.setdefault(ta, ea)
+        priors.setdefault(tb, eb)
+    form = dict(priors)
+    for ta, tb, sa, sb, stage in con.execute(
+            "SELECT team_a, team_b, score_a, score_b, stage FROM series "
+            f"WHERE event_id IN ({s2}) ORDER BY date, id"):
+        if sa == sb:
+            continue
+        fa, fb = form.get(ta, 1500.0), form.get(tb, 1500.0)
+        exp_a = expected(fa, fb)
+        res_a = 1.0 if sa > sb else 0.0
+        k = stage_k(stage) * 1.5
+        form[ta] = fa + k * (res_a - exp_a)
+        form[tb] = fb + k * ((1.0 - res_a) - (1.0 - exp_a))
+    return form
+
+
 def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
            factors, swing_boards, bracket_view, date: str, out: str = "site/public/data.json"):
     elos = dict(con.execute("SELECT player_id, elo FROM player_elo").fetchall())
@@ -96,10 +155,46 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
     for _b in swing_boards.values():
         for _s in _b:
             _s["champs"] = _s["player_id"] in champs
+    team_names, team_region = team_meta()
+    player_region = {}
+    rosters_all = dict(con.execute(
+        "SELECT team_id, roster FROM team_last_roster").fetchall())
+    for tid, r in rosters_all.items():
+        rg = team_region.get(tid)
+        if rg:
+            for p in r.split(","):
+                if p.strip():
+                    player_region[int(p)] = rg
+    for _b in swing_boards.values():
+        for _s in _b:
+            _s["region"] = player_region.get(_s["player_id"])
+    # all 2026 regional-league teams, for the full rankings table
+    ev_year = {e[0]: e[1] for e in EVENTS}
+    ev_region = {e[0]: e[3] for e in EVENTS}
+    teams_2026 = set()
+    for ta, tb, eid in con.execute("SELECT team_a, team_b, event_id FROM series"):
+        if ev_year.get(eid) == 2026 and ev_region.get(eid) in REGIONS:
+            teams_2026.add(ta)
+            teams_2026.add(tb)
+    s2form = stage2_form(con)
+    all_teams = []
+    for tid in teams_2026:
+        if tid not in team_region:
+            continue
+        ps = [int(x) for x in (rosters_all.get(tid) or "").split(",") if x]
+        if not ps:
+            continue
+        slow = sum(elos.get(p, 1500.0) for p in ps) / len(ps)
+        form = s2form.get(tid, slow)
+        all_teams.append({"id": tid, "name": team_names.get(tid, f"team {tid}"),
+                          "region": team_region[tid], "group": team_group.get(tid),
+                          "elo": round(slow, 1), "form": round(form, 1)})
+    all_teams.sort(key=lambda t: -t["elo"])
     payload = {"as_of": date,
                "groups": {g: [{"id": t, "name": TEAMS[t]} for t in ts]
                           for g, ts in GROUPS.items()},
                "teams": teams, "matchups": matchups,
+               "all_teams": all_teams,
                "coefs": [{"f": f, "w": round(float(w), 4)} for f, w in coefs],
                "validation": reports,
                "swing": swing_boards.get("all", []),

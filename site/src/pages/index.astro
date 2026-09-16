@@ -57,8 +57,8 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
 
   <section>
     <h2>Team Elo</h2>
-    <p class="sub">Roster-mean player Elo. Form is the fast tracker; &#916; is fast minus slow.</p>
-    <EloTable teams={data.teams} client:load />
+    <p class="sub">Roster-mean player Elo across every 2026 VCT regional team. Form is Stage-2-only Elo: each team's pre-Stage-2 rating updated on Stage 2 series alone. &#916; is form minus Elo.</p>
+    <EloTable teams={data.all_teams ?? data.teams} client:load />
   </section>
 
   <section>
@@ -142,7 +142,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
       <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
       <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more, and big stages move ratings more than group games. Every offseason, ratings drift 20% back toward average.</p>
       <p>Two things changed in v4. First, credit for a series win is split by Round Swing, not kills: each kill is worth the change in round-win probability it caused, so a 1v3 clutch pays more than a cleanup kill. Second, ratings shrink toward average by sample size instead of a hard cutoff: a player with n maps counts as n/(n+20) themselves and 20/(n+20) average.</p>
-      <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. Two trackers run side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The gap between them reads as form.</p>
+      <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. The model runs two trackers side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The site's Form column is different: it takes each team's pre-Stage-2 rating and updates it on Stage 2 series alone, so a Stage 2 title run shows up even if the rest of the year was mediocre.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>The features</span></div>

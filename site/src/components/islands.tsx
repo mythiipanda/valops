@@ -65,15 +65,27 @@ export function OddsTable({ teams }: { teams: Team[] }) {
   );
 }
 
-export function EloTable({ teams }: { teams: Team[] }) {
+export type AllTeam = { id: number; name: string; region: string; group?: string;
+  elo: number; form: number };
+
+const REGION_LABELS: Record<string, string> =
+  { AM: 'Americas', EMEA: 'EMEA', PAC: 'Pacific', CN: 'China' };
+
+export function EloTable({ teams }: { teams: AllTeam[] }) {
+  const [region, setRegion] = useState('all');
   const [group, setGroup] = useState('all');
   const rows = useMemo(() => teams
+    .filter((t) => region === 'all' || t.region === region)
     .filter((t) => group === 'all' || t.group === group)
-    .map((t) => ({ ...t, delta: (t.fast ?? 0) - (t.elo ?? 0) }))
-    .sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0)), [teams, group]);
+    .map((t) => ({ ...t, delta: t.form - t.elo }))
+    .sort((a, b) => b.elo - a.elo), [teams, region, group]);
   return (
     <div>
       <div className="row island-filter">
+        <select aria-label="Region filter" value={region} onChange={(e) => setRegion(e.target.value)}>
+          <option value="all">All regions</option>
+          {Object.entries(REGION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
         <select aria-label="Group filter" value={group} onChange={(e) => setGroup(e.target.value)}>
           <option value="all">All groups</option>
           {['A', 'B', 'C', 'D'].map((g) => <option key={g} value={g}>Group {g}</option>)}
@@ -81,15 +93,16 @@ export function EloTable({ teams }: { teams: Team[] }) {
         <span className="mut">{rows.length} teams</span>
       </div>
       <table>
-        <thead><tr><th>#</th><th>Team</th><th>Grp</th><th>Elo</th><th>Form</th>
-          <th title="Fast tracker minus slow tracker">&#916;</th></tr></thead>
+        <thead><tr><th>#</th><th>Team</th><th>Region</th><th>Grp</th><th>Elo</th><th>Form</th>
+          <th title="Stage-2 form minus full-year Elo">&#916;</th></tr></thead>
         <tbody>
           {rows.map((t, i) => (
             <tr key={t.id}>
               <td className="num">{i + 1}</td><td>{t.name}</td>
+              <td className="mut">{REGION_LABELS[t.region] ?? t.region}</td>
               <td className="mut">{t.group ?? '–'}</td>
-              <td className="num">{Math.round(t.elo ?? 0)}</td>
-              <td className="num">{Math.round(t.fast ?? 0)}</td>
+              <td className="num">{Math.round(t.elo)}</td>
+              <td className="num">{Math.round(t.form)}</td>
               <td className="num">{t.delta >= 0 ? '+' : ''}{Math.round(t.delta)}</td>
             </tr>
           ))}
@@ -100,7 +113,7 @@ export function EloTable({ teams }: { teams: Team[] }) {
 }
 
 type SwingRow = { player_id: number; name: string; rating: number;
-  role?: string; rounds: number; champs?: boolean };
+  role?: string; rounds: number; champs?: boolean; region?: string | null };
 export type SwingBoards = Record<string, SwingRow[]>;
 
 const STAGES = [
@@ -113,8 +126,11 @@ const STAGES = [
 export function SwingBoard({ boards }: { boards: SwingBoards }) {
   const [champs, setChamps] = useState(true);
   const [stage, setStage] = useState('all');
+  const [region, setRegion] = useState('all');
   const rows = boards[stage] ?? boards['all'] ?? [];
-  const list = rows.filter((r) => !champs || r.champs);
+  const list = rows
+    .filter((r) => !champs || r.champs)
+    .filter((r) => region === 'all' || r.region === region);
   return (
     <div>
       <div className="row island-filter">
@@ -125,6 +141,10 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
           onChange={(e) => setChamps(e.target.value === 'champs')}>
           <option value="champs">Champions players</option>
           <option value="all">All players</option>
+        </select>
+        <select aria-label="Region" value={region} onChange={(e) => setRegion(e.target.value)}>
+          <option value="all">All regions</option>
+          {Object.entries(REGION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <span className="mut">{list.length} players</span>
       </div>
