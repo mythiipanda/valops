@@ -1,5 +1,31 @@
 import { useMemo, useState } from 'react';
 
+type SortDir = 'asc' | 'desc';
+
+function order<T>(rows: T[], get: (r: T) => number | string, dir: SortDir): T[] {
+  const mul = dir === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const va = get(a), vb = get(b);
+    if (typeof va === 'number' && typeof vb === 'number') return (va - vb) * mul;
+    return String(va ?? '').localeCompare(String(vb ?? '')) * mul;
+  });
+}
+
+function SortTh({ label, active, dir, onClick, title }: {
+  label: string; active: boolean; dir: SortDir; onClick: () => void; title?: string;
+}) {
+  return (
+    <th onClick={onClick} title={title} className={'sortth' + (active ? ' on' : '')}>
+      {label}{active ? (dir === 'asc' ? ' ↑' : ' ↓') : ''}
+    </th>
+  );
+}
+
+function toggleSort<K extends string>(cur: { key: K; dir: SortDir }, key: K, ascDefault: K[]) {
+  if (cur.key === key) return { key, dir: cur.dir === 'asc' ? 'desc' : 'asc' as SortDir };
+  return { key, dir: ascDefault.includes(key) ? 'asc' as SortDir : 'desc' as SortDir };
+}
+
 export type Team = { id: number; name: string; title: number; advance: number;
   elo?: number; fast?: number; group?: string;
   roster: { id: number; name: string; elo: number }[] };
@@ -40,7 +66,14 @@ export function Matchup({ teams, matchups }: { teams: Team[]; matchups: Matchup[
 
 export function OddsTable({ teams }: { teams: Team[] }) {
   const [q, setQ] = useState('');
-  const rows = teams.filter((t) => t.name.toLowerCase().includes(q.toLowerCase()));
+  const [sort, setSort] = useState<{ key: 'team' | 'title' | 'advance'; dir: SortDir }>({ key: 'title', dir: 'desc' });
+  const rows = useMemo(() => {
+    const f = teams.filter((t) => t.name.toLowerCase().includes(q.toLowerCase()));
+    const get = (t: Team): number | string =>
+      sort.key === 'team' ? t.name : sort.key === 'title' ? t.title : t.advance;
+    return order(f, get, sort.dir);
+  }, [teams, q, sort]);
+  const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['team']));
   return (
     <div>
       <div className="row island-filter">
@@ -48,7 +81,11 @@ export function OddsTable({ teams }: { teams: Team[] }) {
           value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
       <table>
-        <thead><tr><th>#</th><th>Team</th><th>Title</th><th>Advance</th><th></th></tr></thead>
+        <thead><tr><th>#</th>
+          <SortTh label="Team" active={sort.key === 'team'} dir={sort.dir} onClick={() => toggle('team')} />
+          <SortTh label="Title" active={sort.key === 'title'} dir={sort.dir} onClick={() => toggle('title')} />
+          <SortTh label="Advance" active={sort.key === 'advance'} dir={sort.dir} onClick={() => toggle('advance')} />
+          <th></th></tr></thead>
         <tbody>
           {rows.map((t, i) => (
             <tr key={t.id}>
@@ -74,11 +111,21 @@ const REGION_LABELS: Record<string, string> =
 export function EloTable({ teams }: { teams: AllTeam[] }) {
   const [region, setRegion] = useState('all');
   const [group, setGroup] = useState('all');
-  const rows = useMemo(() => teams
-    .filter((t) => region === 'all' || t.region === region)
-    .filter((t) => group === 'all' || t.group === group)
-    .map((t) => ({ ...t, delta: t.form - t.elo }))
-    .sort((a, b) => b.elo - a.elo), [teams, region, group]);
+  const [sort, setSort] = useState<{ key: 'team' | 'region' | 'grp' | 'elo' | 'form' | 'delta'; dir: SortDir }>({ key: 'elo', dir: 'desc' });
+  const rows = useMemo(() => {
+    const f = teams
+      .filter((t) => region === 'all' || t.region === region)
+      .filter((t) => group === 'all' || t.group === group)
+      .map((t) => ({ ...t, delta: t.form - t.elo }));
+    const get = (t: typeof f[number]): number | string =>
+      sort.key === 'team' ? t.name
+      : sort.key === 'region' ? (REGION_LABELS[t.region] ?? t.region)
+      : sort.key === 'grp' ? (t.group ?? '')
+      : sort.key === 'elo' ? t.elo
+      : sort.key === 'form' ? t.form : t.delta;
+    return order(f, get, sort.dir);
+  }, [teams, region, group, sort]);
+  const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['team', 'region', 'grp']));
   return (
     <div>
       <div className="row island-filter">
@@ -93,8 +140,14 @@ export function EloTable({ teams }: { teams: AllTeam[] }) {
         <span className="mut">{rows.length} teams</span>
       </div>
       <table>
-        <thead><tr><th>#</th><th>Team</th><th>Region</th><th>Grp</th><th>Elo</th><th>Form</th>
-          <th title="Stage-2 form minus full-year Elo">&#916;</th></tr></thead>
+        <thead><tr><th>#</th>
+          <SortTh label="Team" active={sort.key === 'team'} dir={sort.dir} onClick={() => toggle('team')} />
+          <SortTh label="Region" active={sort.key === 'region'} dir={sort.dir} onClick={() => toggle('region')} />
+          <SortTh label="Grp" active={sort.key === 'grp'} dir={sort.dir} onClick={() => toggle('grp')} />
+          <SortTh label="Elo" active={sort.key === 'elo'} dir={sort.dir} onClick={() => toggle('elo')} />
+          <SortTh label="Form" active={sort.key === 'form'} dir={sort.dir} onClick={() => toggle('form')} />
+          <SortTh label="&#916;" active={sort.key === 'delta'} dir={sort.dir} onClick={() => toggle('delta')}
+            title="Stage-2 form minus full-year Elo" /></tr></thead>
         <tbody>
           {rows.map((t, i) => (
             <tr key={t.id}>
@@ -127,10 +180,19 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
   const [champs, setChamps] = useState(true);
   const [stage, setStage] = useState('all');
   const [region, setRegion] = useState('all');
-  const rows = boards[stage] ?? boards['all'] ?? [];
-  const list = rows
-    .filter((r) => !champs || r.champs)
-    .filter((r) => region === 'all' || r.region === region);
+  const [sort, setSort] = useState<{ key: 'player' | 'rating' | 'role' | 'rounds'; dir: SortDir }>({ key: 'rating', dir: 'desc' });
+  const list = useMemo(() => {
+    const rows = boards[stage] ?? boards['all'] ?? [];
+    const f = rows
+      .filter((r) => !champs || r.champs)
+      .filter((r) => region === 'all' || r.region === region);
+    const get = (r: SwingRow): number | string =>
+      sort.key === 'player' ? r.name
+      : sort.key === 'rating' ? r.rating
+      : sort.key === 'role' ? (r.role ?? '') : r.rounds;
+    return order(f, get, sort.dir);
+  }, [boards, stage, champs, region, sort]);
+  const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['player', 'role']));
   return (
     <div>
       <div className="row island-filter">
@@ -149,7 +211,11 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
         <span className="mut">{list.length} players</span>
       </div>
       <table>
-        <thead><tr><th>#</th><th>Player</th><th>Round Swing</th><th>Role</th><th>Rounds</th></tr></thead>
+        <thead><tr><th>#</th>
+          <SortTh label="Player" active={sort.key === 'player'} dir={sort.dir} onClick={() => toggle('player')} />
+          <SortTh label="Round Swing" active={sort.key === 'rating'} dir={sort.dir} onClick={() => toggle('rating')} />
+          <SortTh label="Role" active={sort.key === 'role'} dir={sort.dir} onClick={() => toggle('role')} />
+          <SortTh label="Rounds" active={sort.key === 'rounds'} dir={sort.dir} onClick={() => toggle('rounds')} /></tr></thead>
         <tbody>
           {list.map((p, i) => (
             <tr key={p.player_id}>

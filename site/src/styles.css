@@ -76,6 +76,9 @@ th { text-align: left; color: var(--gray); font-weight: 500; font-size: 12px; li
 td { padding: 7px 8px 7px 0; border-bottom: 1px solid var(--line); color: var(--soft); }
 tr:last-child td { border-bottom: none; }
 td.num, .num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum" 1; color: var(--ink); }
+th.sortth { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortth:hover { color: var(--ink); }
+th.sortth.on { color: var(--ink); }
 
 /* bars, thin and quiet */
 .bar { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }

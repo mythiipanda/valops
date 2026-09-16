@@ -77,7 +77,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   </section>
 
   <section>
-    <table>
+    <table class="sortable">
       <thead><tr><th></th>
         <th title="Attack round win %">atk</th>
         <th title="Defense round win %">def</th>
@@ -114,7 +114,7 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
 
   <section>
     <h2>Experts vs model</h2>
-    <table>
+    <table class="sortable">
       <thead><tr><th>#</th><th>Player</th><th>Ours</th></tr></thead>
       <tbody>
         {(() => {
@@ -190,5 +190,31 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   </section>
   </>)}
 </div>
+<script>
+document.querySelectorAll('table.sortable').forEach((table) => {
+  const ths = [...table.querySelectorAll('thead th')];
+  const tbody = table.querySelector('tbody');
+  let key = -1, dir = 1;
+  const clean = (el) => el.textContent.trim().replace(/[–%+]/g, '');
+  ths.forEach((th, i) => {
+    th.classList.add('sortth');
+    th.addEventListener('click', () => {
+      if (key === i) dir = -dir; else { key = i; dir = 1; }
+      const rows = [...tbody.rows];
+      const numeric = rows.every((r) => {
+        const t = clean(r.cells[i]);
+        return t === '' || !isNaN(Number(t));
+      });
+      rows.sort((a, b) => {
+        if (numeric) return (parseFloat(clean(a.cells[i])) - parseFloat(clean(b.cells[i]))) * dir;
+        return clean(a.cells[i]).localeCompare(clean(b.cells[i])) * dir;
+      });
+      rows.forEach((r) => tbody.appendChild(r));
+      ths.forEach((h) => { h.textContent = h.textContent.replace(/ [↑↓]$/, ''); });
+      th.textContent += dir === 1 ? ' ↑' : ' ↓';
+    });
+  });
+});
+</script>
 </body>
 </html>
