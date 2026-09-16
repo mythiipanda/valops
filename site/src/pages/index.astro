@@ -9,6 +9,54 @@ const hasComps = existsSync(new URL('../../public/comps.json', import.meta.url))
 const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.json', import.meta.url), 'utf8')) : null;
 
 const gname = (b: any, id: number) => b.teams.find((t: any) => t.id === id)?.name ?? String(id);
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const gbracket = (b: any): string => {
+  const BW = 200, CW = 44, RH = 30, BH = 60;
+  const X = [0, 280, 560];
+  const INK = "#111111", GRAY = "rgba(0,0,0,0.4)", LINE = "#eceae4",
+        ACC = "#a36844", CONN = "rgba(0,0,0,0.25)", LAB = "#444444";
+  const nm = (id: number) => esc(gname(b, id));
+  const label = (x: number, y: number, t: string) =>
+    `<text x="${x}" y="${y - 10}" font-size="12" font-weight="600" fill="${LAB}">${t}</text>`;
+  const match = (x: number, y: number, m: any, lab: string): string => {
+    const pa = m.w === m.a ? m.pw : 1 - m.pw;
+    let s = label(x, y, lab);
+    s += `<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="6" fill="#ffffff" stroke="${LINE}"/>`;
+    s += `<line x1="${x}" y1="${y + RH}" x2="${x + BW}" y2="${y + RH}" stroke="${LINE}"/>`;
+    s += `<line x1="${x + BW - CW}" y1="${y}" x2="${x + BW - CW}" y2="${y + BH}" stroke="${LINE}"/>`;
+    [{ id: m.a, p: pa }, { id: m.b, p: 1 - pa }].forEach((r, i) => {
+      const win = r.id === m.w, yy = y + i * RH, cx = x + BW - CW;
+      const fg = win ? INK : GRAY, fw = win ? ' font-weight="600"' : "";
+      s += `<text x="${x + 12}" y="${yy + 19}" font-size="12.5"${fw} fill="${fg}">${nm(r.id)}</text>`;
+      if (win) s += `<rect x="${cx}" y="${yy}" width="${CW}" height="${RH}" fill="${ACC}"/>`;
+      s += `<text x="${cx + CW / 2}" y="${yy + 19}" font-size="12.5" text-anchor="middle"${fw} fill="${win ? "#ffffff" : GRAY}" style="font-variant-numeric: tabular-nums">${Math.round(r.p * 100)}</text>`;
+    });
+    return `<g>${s}</g>`;
+  };
+  const qualified = (x: number, y: number, id: number, tag: string): string => {
+    let s = label(x, y, "Qualified");
+    s += `<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="6" fill="#ffffff" stroke="${LINE}"/>`;
+    s += `<rect x="${x}" y="${y}" width="3" height="${BH}" fill="${ACC}"/>`;
+    s += `<text x="${x + 14}" y="${y + 36}" font-size="13" font-weight="600" fill="${INK}">${nm(id)}</text>`;
+    s += `<text x="${x}" y="${y + BH + 18}" font-size="11.5" fill="${GRAY}">${tag}</text>`;
+    return `<g>${s}</g>`;
+  };
+  const g = b.gsl;
+  const P = (d: string) => `<path d="${d}" fill="none" stroke="${CONN}" stroke-width="1.5"/>`;
+  let s = `<svg viewBox="-8 -30 788 340" xmlns="http://www.w3.org/2000/svg" font-family="Inter Variable, Inter, -apple-system, sans-serif">`;
+  s += P("M200,30 H230 V70 H280") + P("M200,140 H230 V100 H280");
+  s += P("M200,30 H230 V235 H200") + P("M200,140 H230 V265 H200");
+  s += P("M200,250 H210 V265 H280");
+  s += P("M480,85 H560") + P("M480,100 H520 V235 H280") + P("M480,250 H560");
+  s += match(X[0], 0, g.openers[0], "Opening");
+  s += match(X[0], 110, g.openers[1], "");
+  s += match(X[1], 55, g.winners, "Winner's");
+  s += match(X[0], 220, g.elim, "Elimination");
+  s += match(X[1], 220, g.decider, "Decider");
+  s += qualified(X[2], 55, g.winners.w, "2-0");
+  s += qualified(X[2], 220, g.decider.w, "2-1");
+  return s + `</svg>`;
+};
 ---
 <html lang="en">
 <head>
@@ -42,39 +90,7 @@ const gname = (b: any, id: number) => b.teams.find((t: any) => t.id === id)?.nam
     {Object.entries(data.bracket).map(([g, b]) => (
       <div class="group">
         <div class="grouphead"><span>Group {g}</span></div>
-        <div class="gslwrap"><div class="gsl">
-          <div class="gcol">
-            <div class="ground">Openers</div>
-            {b.gsl.openers.map(m => { const pa = m.w === m.a ? m.pw : 1 - m.pw; return (
-              <div class="gslmatch">
-                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
-                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
-              </div>
-            ); })}
-          </div>
-          <div class="gcol">
-            <div class="ground">Winners · Elim</div>
-            {[b.gsl.winners, b.gsl.elim].map(m => { const pa = m.w === m.a ? m.pw : 1 - m.pw;
-              const res = m === b.gsl.winners ? `${gname(b, m.w)} advances 2-0` : `${gname(b, m.l)} eliminated`;
-              return (
-              <div class="gslmatch">
-                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
-                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
-                <div class="gslres">{res}</div>
-              </div>
-            ); })}
-          </div>
-          <div class="gcol">
-            <div class="ground">Decider</div>
-            {(() => { const m = b.gsl.decider; const pa = m.w === m.a ? m.pw : 1 - m.pw; return (
-              <div class="gslmatch">
-                <div class={`pteam${m.w === m.a ? ' fav' : ''}`}><span>{gname(b, m.a)}</span><span class="num">{(pa * 100).toFixed(0)}</span></div>
-                <div class={`pteam${m.w === m.b ? ' fav' : ''}`}><span>{gname(b, m.b)}</span><span class="num">{((1 - pa) * 100).toFixed(0)}</span></div>
-                <div class="gslres">{gname(b, m.w)} advances 2-1</div>
-              </div>
-            ); })()}
-          </div>
-        </div></div>
+        <div class="gsvgwrap"><div class="gsvg" set:html={gbracket(b)} /></div>
         <div class="gadvance">
           <div class="gadvance-title">To advance</div>
           {b.odds.sort((x, y) => y.adv - x.adv).map(o => (
