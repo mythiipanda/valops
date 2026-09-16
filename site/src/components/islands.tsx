@@ -80,12 +80,12 @@ export function SwingBoard({ rows }: { rows: SwingRow[] }) {
         <span className="mut">{list.length} players</span>
       </div>
       <table>
-        <thead><tr><th>#</th><th>Player</th><th>SWING-AR</th><th>Space</th><th>Rounds</th></tr></thead>
+        <thead><tr><th>#</th><th>Player</th><th>Round Swing</th><th>Role</th><th>Rounds</th></tr></thead>
         <tbody>
           {list.map((p, i) => (
             <tr key={p.player_id}>
               <td className="num">{i + 1}</td><td>{p.name}</td>
-              <td className="num">{p.ar100}</td><td className="num">{p.space ?? '–'}</td><td className="num">{p.rounds}</td>
+              <td className="num">{p.rating}</td><td>{p.role ?? '–'}</td><td className="num">{p.rounds}</td>
             </tr>
           ))}
         </tbody>

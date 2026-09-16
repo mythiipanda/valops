@@ -1,39 +1,43 @@
-# VALOPS — Valorant Champions Shanghai 2026 predictor
+# VALOPS
 
-One-page prediction site plus the Python pipeline that builds it. Event: Champions Shanghai, Sep 24 to Oct 18 2026. 16 teams, GSL groups, double-elimination playoffs.
+Predicting Valorant Champions Shanghai 2026 (Sep 24 to Oct 18). A one-page site with the Python pipeline that builds it. Live at https://mythiipanda.github.io/valops/.
 
-## Headline numbers
+## How good is it
 
-Current best model, walk-forward tested:
+Walk-forward tested: train on everything through year Y, test on year Y+1. Lower Brier is better. A coinflip scores 0.25.
 
-| Train through | Test | Brier | Accuracy | n |
+| Train through | Test | Brier | Accuracy | Series |
 |---|---|---|---|---|
-| 2024 | 2025 | 0.2198 | 63.9% | 504 |
-| 2025 | 2026 | 0.2296 | 63.8% | 588 |
+| 2024 | 2025 | 0.219 | 63.9% | 504 |
+| 2025 | 2026 | 0.228 | 63.6% | 588 |
 
-Coinflip Brier is 0.25. Known weakness: overconfidence at extremes (matchups priced at 0.77 win about 0.62). Toss-ups (Elo gap under 15) hit 54%.
+Known flaw: it is overconfident at the extremes. Matchups priced at 77% win about 62% of the time.
 
-## Reproduce
+## Run it
 
 ```bash
 pip install -r requirements.txt
 python3 run.py ingest   # pull VLR data into data/valops.db (cached in data/raw/)
-python3 run.py elo      # roster-anchored player Elo ratings
-python3 run.py train    # features, logistic model, walk-forward Brier gates
+python3 run.py elo      # player Elo ratings
+python3 run.py train    # features, logistic model, walk-forward gates
 python3 run.py sim      # 10k Monte Carlo sims, writes site/public/data.json
-cd site && npm install && npx astro build   # static dist/, ship to GitHub Pages
+cd site && npm install && npx astro build   # static dist/, ships to GitHub Pages
 ```
 
-Data as shipped: 1,861 series, 4,718 maps, 47k player-maps, 100k rounds, LOCK//IN 2023 through Stage 2 2026. Tables live in `data/valops.db`; `data/status.json` is the manifest.
+The data as shipped: 1,861 series, 4,718 maps, 47k player-maps, 100k rounds, from LOCK//IN 2023 through Stage 2 2026. Tables live in `data/valops.db`. `data/v4_swing.pkl` holds the per-kill Round Swing table the Elo build loads.
 
-## Methodology
+## How it works
 
-Roster-anchored player Elo. Players carry ratings across orgs and years, so a transfer moves skill with the player instead of resetting it. Team strength is the current five-man mean minus a chemistry dock for new lineups. Each offseason regresses ratings 20% toward the mean. Provisional players get a 1.5x K multiplier for their first 10 maps. Updates scale by stage (group/main/playoff), event tier, and each player's map share, so stars move more than passengers. A second, faster Elo (K x1.5, no offseason regression) tracks recent form alongside the long-run rating.
+Ratings live on players, not teams, so a transfer moves the rating with the player. Team strength is the five-man mean minus a chemistry dock for new lineups. Every January ratings drift 20% back toward average. Rookies get a 1.5x K multiplier for their first 25 maps.
 
-The match model is logistic regression on 19 A-minus-B diffs: team Elo gap, fast form-Elo gap, player rating stats (rating, ACS, KAST, ADR, FK-FD), form, winrate, head-to-head, LAN flag, duelist share, coverage, rest, strength of schedule, pistol and retake round-type skill, favorite-map edge, and a playoff-Elo interaction.
+The v4 update changed how series credit is split. Every kill is worth the round-win probability it added, measured from 2023-2024 rounds by attackers alive, defenders alive, and plant state. A first blood in a 1v1 pays far more than a cleanup kill in a 5v2. Credit is zero-sum per round: what the killer gains, the victim loses. Each player is scored against the prior-year average for their agent, then shrunk toward zero by sample size. A player with n maps counts as n/(n+20) themselves.
 
-Evaluation is walk-forward: train on all data through year Y, test on year Y+1. Champions 2026 is excluded from tests. A change ships only if it improves walk-forward Brier on both test years without harming either. Tried and rejected under this gate: margin-scaled K, decay weighting, recency-decayed K updates, momentum, playoff form, map-level Elo (v2), round-level Elo (v3), GBM, comp matchup matrix, round-win roll-up. The gate notes live in HANDOFF.md.
+A second, faster tracker (1.5x K, no January drift) runs alongside and reads as form.
 
-Forecasting runs 10k Monte Carlo sims over the real GSL groups, then an 8-team double-elimination playoff with playoff-conditioned probabilities.
+The match model is logistic regression on 19 A-minus-B gaps: Elo, fast Elo, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), win rate, head-to-head, LAN flag, rest, schedule strength, pistol and retake skill, map edges, and a playoff interaction.
 
-The site also shows SWING, a round-swing impact metric (display only; it failed the predictive gate twice and stays out of the model). Swing credit is opponent-adjusted: 1 + (opponent Elo - 1500) / 400 per map, so beating elite teams pays more than farming weak regions. There is also a merge of Plat Chat expert top-10 lists next to the model's own player ranks.
+The site also ranks players by Round Swing and sets the board next to a merged Plat Chat expert top-40.
+
+## What didn't make it
+
+A change ships only if walk-forward Brier improves on both test years. These failed the gate: margin-scaled K, decay weighting, recency-decayed K, momentum, playoff form, map-level Elo, round-level Elo, GBM, comp matchup matrix, round-win roll-up. The attempt log lives in HANDOFF.md.

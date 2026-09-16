@@ -177,10 +177,11 @@ def diffs(a: dict, b: dict, elo_diff: float, elo_fast_diff: float = 0.0) -> dict
     return d
 
 
-def build(con: sqlite3.Connection) -> pd.DataFrame:
+def build(con: sqlite3.Connection, se_tbl: str = "series_elo",
+          sef_tbl: str = "series_elo_fast") -> pd.DataFrame:
     s, tm, ev, ms, mc, me, cl, meta, ss, tr = load(con)
-    se = pd.read_sql("SELECT * FROM series_elo", con).set_index("series_id")
-    se_f = pd.read_sql("SELECT * FROM series_elo_fast", con).set_index("series_id")
+    se = pd.read_sql(f"SELECT * FROM {se_tbl}", con).set_index("series_id")
+    se_f = pd.read_sql(f"SELECT * FROM {sef_tbl}", con).set_index("series_id")
     out = []
     for _, row in s.iterrows():
         sid, date = row["id"], row["date"]

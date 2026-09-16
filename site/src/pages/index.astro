@@ -101,14 +101,14 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
   </section>
 
   <section>
-    <h2>2026 Swing leaders</h2>
-    <p class="sub">Impact per 100 rounds.</p>
+    <h2>2026 Round Swing leaders</h2>
+    <p class="sub">Round-win probability added per 100 rounds, agent-adjusted and shrunk.</p>
     <SwingBoard rows={data.swing} client:load />
   </section>
 
   <section>
     <h2>Experts vs model</h2>
-    <p class="sub">Nine Plat Chat lists merged into one Top 40. Ours is SWING-AR rank among Champions players only.</p>
+    <p class="sub">Nine Plat Chat lists merged into one Top 40. Ours is Round Swing rank among Champions players only.</p>
     <table>
       <thead><tr><th>#</th><th>Player</th><th>Ours</th></tr></thead>
       <tbody>
@@ -135,7 +135,8 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
       <div class="teamhead"><span>Player Elo</span></div>
       <div class="formula">R&#8242; = R + K(S &#8722; E)</div>
       <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
-      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more, and big stages move ratings more than group games. Every offseason, ratings drift 30% back toward average.</p>
+      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more, and big stages move ratings more than group games. Every offseason, ratings drift 20% back toward average.</p>
+      <p>Two things changed in v4. First, credit for a series win is split by Round Swing, not kills: each kill is worth the change in round-win probability it caused, so a 1v3 clutch pays more than a cleanup kill. Second, ratings shrink toward average by sample size instead of a hard cutoff: a player with n maps counts as n/(n+20) themselves and 20/(n+20) average.</p>
       <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. Two trackers run side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The gap between them reads as form.</p>
     </div>
     <div class="team">
@@ -165,12 +166,10 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
     </div>
     <div class="team">
       <div class="teamhead"><span>Player scores</span></div>
-      <div class="formula">swing(round) = P(win | score + 1) &#8722; P(win | score)</div>
-      <p>Every round is worth its win-probability jump. An 11-11 round moves the needle far more than a 12-3 round, so clutch rounds pay more. A map's total swing is split across the winning five by kills, first kills, assists, and survival, weighted by role.</p>
-      <div class="formula">Space = (first kills + first deaths) / rounds</div>
-      <p>Space is engagement rate: how often a player takes the first duel of a round.</p>
-      <div class="formula">SWING-AR = (swing &#8722; replacement swing) / rounds &#215; 100</div>
-      <p>Replacement level is the 20th percentile of the player's role, so a duelist is judged against duelists. Swing is opponent-adjusted first: credit scales as 1 + (opponent Elo &#8722; 1500) / 400, so beating an elite team pays more than farming a weak region.</p>
+      <div class="formula">swing(kill) = P(win round | after) &#8722; P(win round | before)</div>
+      <p>Every kill is worth the round-win probability it added. A first blood in a 1v1 is worth far more than a trade in a 5v2, so stat padding dies here. The probabilities come from 2023-2024 rounds, keyed on attackers alive, defenders alive, and whether the spike is planted. Credit is zero-sum: what the killer gains, the victim loses. Plants and defuses move the state but earn no direct credit.</p>
+      <div class="formula">Round Swing = &#931; (swing &#8722; agent average) / rounds &#215; 100</div>
+      <p>Each player is measured against the prior-year average for their agent, so a duelist is judged against duelists. The result is per 100 rounds, then shrunk toward zero for small samples. This replaced the old kill-share swing and the space metric.</p>
     </div>
     <table>
       <thead><tr><th>Split</th><th>Brier</th><th>Acc</th><th>n</th></tr></thead>

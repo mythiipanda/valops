@@ -34,18 +34,26 @@ def half_sides(g):
 
 
 def team_side_strength(hist, tid, date, map_name=None, days=120):
-    """Attack/defense round win% prior. Shrunk."""
-    h = hist[((hist["team_a"] == tid) | (hist["team_b"] == tid)) &
-             (hist["date"] < date) & (hist["date"] > date - pd.Timedelta(days=days))]
-    mine = h[h["winner_id"] == tid]
-    atk = h[h["side"] == "Attack"]
-    res = {}
-    for side in ("Attack", "Defense"):
-        hs = h[h["side"] == side]
-        w = len(hs[hs["winner_id"] == tid])
-        n = len(hs)
-        res[side] = (w + PRIOR_W * PRIOR_N) / (n + PRIOR_N) if n >= 12 else None
-    return res
+    """Attack/defense round win% prior. Shrunk.
+
+    Fallback windows: 120d -> 365d -> all history -> map prior -> 0.5.
+    Never returns None (the old None-on-<12-rounds starved offseason matches
+    and zeroed round_prob via falsy checks).
+    """
+    for d in (days, 365, 10_000):
+        h = hist[((hist["team_a"] == tid) | (hist["team_b"] == tid)) &
+                 (hist["date"] < date) & (hist["date"] > date - pd.Timedelta(days=d))]
+        res = {}
+        for side in ("Attack", "Defense"):
+            hs = h[h["side"] == side]
+            w = len(hs[hs["winner_id"] == tid])
+            n = len(hs)
+            res[side] = (w + PRIOR_W * PRIOR_N) / (n + PRIOR_N) if n >= 12 else None
+        if all(v is not None for v in res.values()):
+            return res
+    # last resort: map-side prior, then coin flip
+    prior = 0.5 + (map_side_prior(hist, date, map_name) if map_name else 0.0)
+    return {"Attack": prior, "Defense": 1.0 - prior}
 
 
 def map_side_prior(hist, date, map_name, days=365):

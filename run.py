@@ -54,7 +54,7 @@ def cmd_sim(_):
         print(f"{TEAMS[t]:20s} title {sim['title'][t]:.3f}  advance {sim['advance'][t]:.3f}")
     from pipeline import bracket as B
     X.export(con, clf, coefs, M.evaluate(df), sim, p, factors,
-             S.ar_table(con, 200, elo_adjust=True), B.simulate_all(p), DATE)
+             S.round_swing_board(con), B.simulate_all(p), DATE)
     print("wrote site/public/data.json")
     con.close()
 

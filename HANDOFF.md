@@ -182,3 +182,73 @@ Best annual accuracy 64.7%. 70% needs: historical closing odds, live veto/map da
 - c469167: model winner (features.py, model.py)
 - No v2 commit (failed validation). swing.py has uncommitted v2 code.
 - HANDOFF.md updated throughout.
+
+## Mispricing probes (2026-09-15 ~10:00 ET, subagent)
+
+### Probe 2 (Pacific): model UNDERrates Pacific inter-region — "too high" NOT supported
+Walk-forward (out-of-sample) on 2025-26 inter-region series (n=39):
+- Pacific teams: predicted ~50%, actual 70% (16/23). Brier on PAC matches 0.22-0.24.
+- Driver is PRX: n=11, predicted 58%, actual 91% (10-1). T1: n=9, predicted 45%, actual 44% (fair). Nongshim 2-0, GE 0-1 (tiny samples).
+- Verdict: Pacific's 53% title equity is downstream of fair Elos, not inflation. If anything the model is conservative on Pacific. No region adjustment needed; do NOT add anti-Pacific shrinkage.
+
+### Probe 1 (T1): fairly rated — high title odds are Elo + weak group draw
+- T1 2026 walk-forward: predicted 65.5%, actual 69.0% (n=29). Slightly UNDERrated.
+- Inter-region: predicted 45%, actual 44% (n=9). Fair.
+- 2-3 vs 1570+ opponents is real, but the model prices it: T1 are underdogs vs elite.
+- 10% title / 71% advance = Elo 1589 (earned, 20-9) + weakest group (A: 100T/JDG/FUT). Draw luck, not mispricing.
+
+### Probe 4 (Asuna): display artifact, NOT a model bug
+- Asuna player Elo 1547, rank 60/262 (2026, 20+ maps). Rating 1.068, ACS 207.5.
+- Mechanism: Elo update redistributes team Elo by within-team share of max(K-D,0)+FK. Entry/space players (even KD, deaths for space) get small shares. Asuna's Elo converges to average.
+- BUT the redistribution is exactly zero-sum within a team (sum of pw = 5.0), so TEAM strength (mean of 5) is invariant to it. 100T's rating is unaffected. Only matters on transfers.
+- Verdict: fix belongs on the site (role-adjusted board or show rating alongside), not in the model. Do not "fix" the redistribution for prediction — it doesn't affect team strength.
+
+### Probe 3 (dead rubbers): REAL effect found, testing fix
+- Late group-stage matches (last 25% by date within event+stage): Brier 0.2260 vs 0.2151 early; big favorites predicted 75.1% win 69.7% (-5.4pp) vs early -1.6pp. n=203 late / 555 early.
+- Supports Tony's PRX/EDG coasting intuition with numbers.
+- Fix attempt: scale Elo K by LATE_K_MULT for late group matches (knowable pre-match, no leakage).
+- LATE_K_MULT=0.5: 2025 brier 0.2193->0.2194 (WORSE), acc 64.7%->64.5% (worse); 2026 brier 0.2268->0.2266, acc 64.3%->64.6%. Pooled 0.2233->0.2230 but FAILS strict gate (2025 regresses).
+- LATE_K_MULT=0.3: testing.
+
+### rib.gg recon: bot-walled, documented, moving on
+- https://www.rib.gg/series/<slug>/<id> returns HTTP 429 + "Vercel Security Checkpoint" for programmatic fetches (two UAs tried, 15s apart). Confirms HANDOFF "bot-walled".
+- No API access without browser automation (not available to this worker). Not burning more time here.
+- In-hand round data (round_detail 100k rows, map_eco, series_clutch) already exhausted per HANDOFF (clutch/eco rejected; round roll-up has unfixed side-strength bug).
+
+### Probe 3 (dead rubbers), continued: K discount fails strict gate
+- LATE_K_MULT=0.3: 2025 brier 0.2193->0.2195 (WORSE), acc 64.7%->64.9%; 2026 brier 0.2268->0.2266, acc 64.3%->64.6%. Pooled 0.2233->0.22305 but 2025 brier regresses -> FAILS gate.
+- Pattern: stronger discount helps 2026, hurts 2025. Effect may be 2026-specific or the date-based "late" definition is too crude (needs standings-based clinched/eliminated, not date rank).
+- Reverted to LATE_K_MULT=1.0 (off). Code kept in elo.py for future work. The empirical finding (late group favorites -5.4pp) stands as a known effect; a standings-based stakes feature is the principled next attempt.
+
+### elopo removal test: REJECTED (marginal analysis misled; gate is truth)
+- Observation: walk-forward playoff big favorites predicted 69.2%, actual 75.9% — looked like the negative elopo (-0.0053) was shrinking favorites wrongly.
+- Test (drop elopo_diff): 2025 brier 0.2193->0.2205 (worse), acc 64.7%->65.3%; 2026 brier 0.2268->0.2276 (worse), acc 64.3%->63.1% (worse). Pooled 0.2233->0.2241. REJECTED on all counts.
+- Lesson: the coefficient is load-bearing in the joint model (learned conditional on other features); marginal calibration doesn't transfer. elopo stays. Reverted.
+
+### Standings-based stakes test (2026-09-15 ~13:00 UTC): principled tagger built, FAILED strict gate
+Goal: replace the crude date-based LATE_K_MULT proxy with a standings-based low-stakes tagger.
+
+Tagger (`low_stakes_series()` in pipeline/elo.py, diagnostics in probe_stakes.py):
+- Processes series in (date, id) order like elo.py. Sub-groups = connected components of the team-vs-team matchup graph within each (event_id, stage) block. Verified splits: 2x6 RR groups (15 matches each), 2x GSL-4 (5 each), Kickoff mixed [3,4,4].
+- Cut line k per sub-group = # members appearing in a later playoff-hint stage of the same event (Play-Ins excluded: those teams have not advanced). Verified clean: 10-team RR->6, 11-team->6, 12-team 2x6->4/4, 16-team GSL->2s, 8-team swiss->4, Kickoff 11-team->1/2/1 (playoffs-only, uneven but data-driven).
+- Swiss blocks: tag 2-0-vs-2-0 and 0-2-vs-0-2 only. Result: 0 tags (those matchups never occur in the 8-team/10-match blocks — decided teams stop playing).
+- RR/GSL blocks: tiebreak-proof clinch/elim math on pre-match W-L (strictly past matches only) + known schedule. ELIMINATED if k teams locked strictly above best case (incl. winning current); CLINCHED if at most k-1 others can even tie the floor. Tag when both teams decided. GSL/Champions groups naturally yield 0 tags (decided teams play no more matches) — as predicted.
+- Main Event blocks (Kickoff/LCQ brackets, k=0, no in-event playoffs) skipped: every match advances/eliminates by construction. Cross-event k inference rejected (regional roster stability confounds qualification flow).
+- Yield: 56/1286 group matches tagged low-stakes (4.4%). Samples sane: 8-0-vs-7-1 and 2-6-vs-0-8 late-season RRs; all GSL/swiss/bracket blocks 0.
+- Bug caught in review: best-case initially excluded winning the current match (over-tagged 115 -> corrected 56).
+
+Results (walk-forward raw; gate needs pooled<0.2233, both yearly briers better, acc within 0.1pp):
+- Baseline (STAKES=1.0): 2025 brier 0.219307 acc 64.68% | 2026 brier 0.226818 acc 64.29% | pooled raw 0.223351.
+- STAKES_K_MULT=0.5: 2025 brier 0.219128 acc 64.09% | 2026 brier 0.226801 acc 64.29% | pooled 0.223260. Briers all improve but 2025 acc -0.59pp -> FAILS gate.
+- STAKES_K_MULT=0.3: 2025 brier 0.219066 acc 64.29% | 2026 brier 0.226807 acc 64.63% | pooled 0.223234. Briers all improve, 2026 acc improves, but 2025 acc -0.39pp -> FAILS gate.
+- Verdict: same signature as the date-based discount (tiny brier gains, accuracy cost) — only 56 tagged matches move Elo slightly and flip 2-3 coin-flip 2025 matches. Looks like noise, not signal. REVERTED to STAKES_K_MULT=1.0 (code + probe kept for future work, same pattern as LATE_K_MULT).
+- Next idea (not tried): stakes as a MODEL FEATURE (low-stakes flag / elo_x_stakes interaction letting the logistic shrink favorites in dead rubbers) instead of an Elo K discount — K discounting also damps legitimate information (underdog wins), while a feature only adjusts the prediction. Do not retry K discounting unchanged.
+
+### rib.gg + round-data session (2026-09-15 ~14:30-15:00 UTC) — Tony wants 67% today
+- rib.gg via sandbox network: DEAD (curl 429, headless/headed chromium ERR_EMPTY_RESPONSE — Vercel kills datacenter IPs). Managed browser task works: extracted all 35 rounds of G2-vs-LOUD/917 clean (map, round#, winner, method, side). No CAPTCHA. But 1 match = ~3 min via browser task -> bulk scraping not feasible today.
+- roundmodel.py side-strength bug FIXED (fallback windows 120d->365d->all->map prior; never None). But map-level gate still FAILS: roundmodel brier 0.2645 acc 53.5% vs elo-implied 0.2424 acc 57.3% (2779 maps, 2025-26). Blends all worse. Verdict: round-sim path dead with current data — side-strength info doesn't beat Elo. (Also fixed a DP boundary bug in my eval harness that had given 0.42.)
+- Round-margin dominance feature (trailing avg rounds won-lost/map, 120d): corr 0.218 with label but FAILS strict gate (pooled 0.2250 vs 0.2233; both years worse). Information redundant with elo/form.
+- Elo board redesign (role-aware redistribution + display-only accumulator): FAILS strict gate. 2025 0.2185/64.68% (slightly better), 2026 0.2275/64.29% (worse than 0.2268), pooled exactly 0.2233 (not < 0.2233). Eye test also mixed (Asuna #78 on display board — worse). REVERTED (elo.py + run.py to 087698f, DB re-run, player_elo_board dropped).
+- Comp familiarity (exact 5-agent comp 3+ uses/180d): map win% 53.2% vs 49.6%, residual +0.013 after elo. Small but real — NOT yet gate-tested. Next.
+- Stakes-as-feature (lowstakes flag / elo_x_stakes interaction from the standings tagger): NOT yet tested. Next.
+- Scoreboard: everything tried today failed. 64.3% -> 67% needs genuinely new signal; current data caps ~65%.
