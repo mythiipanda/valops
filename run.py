@@ -53,8 +53,17 @@ def cmd_sim(_):
         from pipeline.config import TEAMS
         print(f"{TEAMS[t]:20s} title {sim['title'][t]:.3f}  advance {sim['advance'][t]:.3f}")
     from pipeline import bracket as B
+    boards = {
+        "all": S.round_swing_board(con, "2026-01-01", half_life_days=60,
+                                   tier_weight=True, as_of=DATE),
+        "stage2": S.round_swing_board(con, "2026-06-01", as_of=DATE),
+        "stage1": S.round_swing_board(con, "2026-03-01", "2026-06-01", as_of=DATE),
+        "kickoff": S.round_swing_board(con, "2026-01-01", "2026-03-01", as_of=DATE),
+    }
+    for k, b in boards.items():
+        print(f"swing board {k}: {len(b)} players")
     X.export(con, clf, coefs, M.evaluate(df), sim, p, factors,
-             S.round_swing_board(con), B.simulate_all(p), DATE)
+             boards, B.simulate_all(p), DATE)
     print("wrote site/public/data.json")
     con.close()
 

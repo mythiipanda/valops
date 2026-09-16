@@ -58,7 +58,7 @@ def team_dna(con: sqlite3.Connection) -> list:
 
 
 def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
-           factors, swing_board, bracket_view, date: str, out: str = "site/public/data.json"):
+           factors, swing_boards, bracket_view, date: str, out: str = "site/public/data.json"):
     elos = dict(con.execute("SELECT player_id, elo FROM player_elo").fetchall())
     champs = set()
     for tid, r in con.execute("SELECT team_id, roster FROM team_last_roster").fetchall():
@@ -84,15 +84,17 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
     matchups = [{"a": a, "b": b, "p": round(p, 4),
                  "factors": factors.get((a, b), [])}
                 for (a, b), p in sorted(pairwise_p.items())]
-    for _s in swing_board:
-        _s["champs"] = _s["player_id"] in champs
+    for _b in swing_boards.values():
+        for _s in _b:
+            _s["champs"] = _s["player_id"] in champs
     payload = {"as_of": date,
                "groups": {g: [{"id": t, "name": TEAMS[t]} for t in ts]
                           for g, ts in GROUPS.items()},
                "teams": teams, "matchups": matchups,
                "coefs": [{"f": f, "w": round(float(w), 4)} for f, w in coefs],
                "validation": reports,
-               "swing": swing_board,
+               "swing": swing_boards.get("all", []),
+               "swing_boards": swing_boards,
                "bracket": bracket_view,
                "dna": team_dna(con)}
     Path(out).parent.mkdir(parents=True, exist_ok=True)

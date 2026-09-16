@@ -89,7 +89,29 @@ def _gsl(group: list[int], p, rng) -> list[int]:
 
 
 def _double_elim(teams: list[int], p, rng, bo5_final=True) -> int:
-    """8-team double elim. Returns champion."""
+    """8-team double elim. Returns champion.
+
+    teams = [A1, A2, B1, B2, C1, C2, D1, D2] (group winner, runner-up pairs).
+    QF draw follows the official Champions rules (2026 VCT ruleset sec. 22):
+    group winners (Pool 1) then runners-up (Pool 2) drawn randomly into QF
+    slots, with same-group teams forced onto opposite bracket sides.
+    """
+    firsts = teams[0::2]
+    seconds = teams[1::2]
+    # Official Champions draw (2026 VCT ruleset, sec. 22): Pool 1 (group
+    # winners) then Pool 2 (runners-up) drawn randomly into QF slots, with
+    # the constraint that same-group teams land on OPPOSITE sides of the
+    # bracket (sides = QF1+QF2 vs QF3+QF4). Same-region matchups allowed.
+    while True:
+        w_qf = list(rng.permutation(4))  # QF index for each group's winner
+        s_qf = list(rng.permutation(4))  # QF index for each group's runner-up
+        if all((w < 2) != (s < 2) for w, s in zip(w_qf, s_qf)):
+            break
+    slots = [None] * 8
+    for g in range(4):
+        slots[2 * w_qf[g]] = firsts[g]
+        slots[2 * s_qf[g] + 1] = seconds[g]
+    teams = slots
     def win(a, b):
         return a if rng.random() < p[(a, b)] else b
     qf = [win(teams[i], teams[i + 1]) for i in (0, 2, 4, 6)]

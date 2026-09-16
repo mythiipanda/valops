@@ -284,7 +284,10 @@ def ar_table(con: sqlite3.Connection, min_rounds: int = 100,
 # ---------------------------------------------------------------------------
 
 def round_swing_board(con: sqlite3.Connection, since: str = "2026-01-01",
-                      min_rounds: int = 200) -> list:
+                      until: str | None = None, min_rounds: int = 200,
+                      half_life_days: float | None = None,
+                      tier_weight: bool = False,
+                      as_of: str = "2026-09-24") -> list:
     """Per-player Round Swing ratings: role(agent)-residualized, shrunk.
 
     Each kill moves the round's win probability; a player's Round Swing is
@@ -292,9 +295,15 @@ def round_swing_board(con: sqlite3.Connection, since: str = "2026-01-01",
     per 100 rounds, then shrunk toward 0 by rounds played (20-map scale).
     Zero-sum per round: every point of credit to a killer is a point taken
     from the victim. Plants and defuses move the state but earn no direct
-    credit. Returns [{player_id, name, rounds, role, rating}] sorted by rating.
+    credit. Agent baselines come from seasons before `since`. When
+    half_life_days is set, maps are weighted by recency
+    (2**(-age_days / half_life_days)) so recent splits count more; when
+    tier_weight is set, maps are also scaled by event tier (masters 1.2x,
+    regional 0.7x), so international results carry more weight.
+    Returns [{player_id, name, rounds, role, rating}] sorted by rating.
     """
     import pickle
+    from datetime import date
     try:
         swing = pickle.load(open(SWING_PKL, "rb"))
     except (OSError, pickle.PickleError):
@@ -302,45 +311,54 @@ def round_swing_board(con: sqlite3.Connection, since: str = "2026-01-01",
     rows = con.execute(
         "SELECT s.date, pm.series_id, pm.game, pm.player_id, pm.name, pm.agent,"
         " pm.rounds FROM player_map pm JOIN series s ON s.id=pm.series_id"
-        " WHERE s.date >= ?", (since,)).fetchall()
-    # agent baselines from prior years only
-    by_ya: dict[tuple[int, str], list] = {}
-    for date, sid, game, pid, name, agent, rnd in rows:
-        y = int(date[:4])
+        " WHERE s.date < ?", (since,)).fetchall()
+    # agent baselines from seasons before the window
+    by_ya: dict[tuple[str], list] = {}
+    for date_s, sid, game, pid, name, agent, rnd in rows:
         sw = swing.get((sid, game, pid))
         if sw is not None:
-            by_ya.setdefault((y, (agent or "").split(",")[0]), []).append(sw)
-    years = sorted({y for y, _ in by_ya})
-    base: dict[tuple[int, str], float] = {}
-    for i, y in enumerate(years):
-        agg: dict[str, list] = {}
-        for (yy, ag), vals in by_ya.items():
-            if yy < y:
-                agg.setdefault(ag, []).extend(vals)
-        for ag, vals in agg.items():
-            if len(vals) >= 30:
-                base[(y, ag)] = sum(vals) / len(vals)
-    tot: dict[int, list] = {}  # pid -> [resid_sum, rounds, name, agent_counts]
-    for date, sid, game, pid, name, agent, rnd in rows:
-        y = int(date[:4])
+            by_ya.setdefault((agent or "").split(",")[0], []).append(sw)
+    base: dict[str, float] = {}
+    for ag, vals in by_ya.items():
+        if len(vals) >= 30:
+            base[ag] = sum(vals) / len(vals)
+    asof = date.fromisoformat(as_of[:10])
+    tier_of: dict[int, float] = {}
+    if tier_weight:
+        from .config import EVENTS, TIER_W
+        tier_of = {eid: TIER_W.get(tier, 1.0) for eid, _y, tier, _r in EVENTS}
+    wrows = con.execute(
+        "SELECT s.date, s.event_id, pm.series_id, pm.game, pm.player_id, pm.name,"
+        " pm.agent, pm.rounds FROM player_map pm JOIN series s ON s.id=pm.series_id"
+        " WHERE s.date >= ?" + ("" if until is None else " AND s.date < ?"),
+        (since,) if until is None else (since, until)).fetchall()
+    tot: dict[int, list] = {}  # pid -> [wresid_sum, wrounds, rounds, name, agent_counts]
+    for date_s, eid, sid, game, pid, name, agent, rnd in wrows:
         sw = swing.get((sid, game, pid))
         if sw is None:
             continue
         ag = (agent or "").split(",")[0]
-        r = sw - base.get((y, ag), 0.0)
-        t = tot.setdefault(pid, [0.0, 0, name, {}])
-        t[0] += r
-        t[1] += rnd or 0
-        t[3][ag] = t[3].get(ag, 0) + (rnd or 0)
+        r = sw - base.get(ag, 0.0)
+        w = 1.0
+        if half_life_days:
+            age = (asof - date.fromisoformat(date_s[:10])).days
+            w *= 2.0 ** (-max(age, 0) / half_life_days)
+        if tier_weight:
+            w *= tier_of.get(eid, 1.0)
+        t = tot.setdefault(pid, [0.0, 0.0, 0, name, {}])
+        t[0] += r * w
+        t[1] += (rnd or 0) * w
+        t[2] += rnd or 0
+        t[4][ag] = t[4].get(ag, 0) + (rnd or 0)
     out = []
-    for pid, (rsum, rnd, name, agents) in tot.items():
+    for pid, (wrsum, wrnd, rnd, name, agents) in tot.items():
         if rnd < min_rounds:
             continue
-        raw = rsum / rnd * 100.0
-        w = rnd / (rnd + 20 * 24)  # ~20 maps of shrinkage
+        raw = wrsum / wrnd * 100.0 if wrnd else 0.0
+        wsh = wrnd / (wrnd + 20 * 24)  # ~20 maps of shrinkage on effective rounds
         role = ROLE.get(max(agents, key=lambda a: agents[a]), "?") if agents else "?"
         out.append({"player_id": pid, "name": name, "rounds": rnd, "role": role,
-                    "rating": round(raw * w, 2)})
+                    "rating": round(raw * wsh, 2)})
     out.sort(key=lambda d: -d["rating"])
     return out
 

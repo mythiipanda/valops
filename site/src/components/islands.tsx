@@ -64,14 +64,28 @@ export function OddsTable({ teams }: { teams: Team[] }) {
   );
 }
 
-export type SwingRow = { player_id: number; name: string; ar100: number; rounds: number; champs: boolean; space?: number };
+type SwingRow = { player_id: number; name: string; rating: number;
+  role?: string; rounds: number; champs?: boolean };
+export type SwingBoards = Record<string, SwingRow[]>;
 
-export function SwingBoard({ rows }: { rows: SwingRow[] }) {
+const STAGES = [
+  { id: 'all', label: 'All 2026' },
+  { id: 'stage2', label: 'Stage 2' },
+  { id: 'stage1', label: 'Stage 1' },
+  { id: 'kickoff', label: 'Kickoff' },
+];
+
+export function SwingBoard({ boards }: { boards: SwingBoards }) {
   const [champs, setChamps] = useState(true);
+  const [stage, setStage] = useState('all');
+  const rows = boards[stage] ?? boards['all'] ?? [];
   const list = rows.filter((r) => !champs || r.champs);
   return (
     <div>
       <div className="row island-filter">
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {STAGES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
         <select aria-label="Player pool" value={champs ? 'champs' : 'all'}
           onChange={(e) => setChamps(e.target.value === 'champs')}>
           <option value="champs">Champions players</option>
