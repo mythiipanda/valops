@@ -169,6 +169,9 @@ type SwingRow = { player_id: number; name: string; rating: number;
   role?: string; rounds: number; champs?: boolean; region?: string | null };
 export type SwingBoards = Record<string, SwingRow[]>;
 
+const ROLE_LABELS: Record<string, string> =
+  { D: 'Duelist', C: 'Controller', I: 'Initiator', S: 'Sentinel' };
+
 const STAGES = [
   { id: 'all', label: 'All 2026' },
   { id: 'stage2', label: 'Stage 2' },
@@ -180,18 +183,20 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
   const [champs, setChamps] = useState(true);
   const [stage, setStage] = useState('all');
   const [region, setRegion] = useState('all');
+  const [role, setRole] = useState('all');
   const [sort, setSort] = useState<{ key: 'player' | 'rating' | 'role' | 'rounds'; dir: SortDir }>({ key: 'rating', dir: 'desc' });
   const list = useMemo(() => {
     const rows = boards[stage] ?? boards['all'] ?? [];
     const f = rows
       .filter((r) => !champs || r.champs)
-      .filter((r) => region === 'all' || r.region === region);
+      .filter((r) => region === 'all' || r.region === region)
+      .filter((r) => role === 'all' || r.role === role);
     const get = (r: SwingRow): number | string =>
       sort.key === 'player' ? r.name
       : sort.key === 'rating' ? r.rating
       : sort.key === 'role' ? (r.role ?? '') : r.rounds;
     return order(f, get, sort.dir);
-  }, [boards, stage, champs, region, sort]);
+  }, [boards, stage, champs, region, role, sort]);
   const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['player', 'role']));
   return (
     <div>
@@ -208,6 +213,10 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
           <option value="all">All regions</option>
           {Object.entries(REGION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
+        <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="all">All roles</option>
+          {Object.entries(ROLE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
         <span className="mut">{list.length} players</span>
       </div>
       <table>
@@ -220,7 +229,7 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
           {list.map((p, i) => (
             <tr key={p.player_id}>
               <td className="num">{i + 1}</td><td>{p.name}</td>
-              <td className="num">{p.rating}</td><td>{p.role ?? '–'}</td><td className="num">{p.rounds}</td>
+              <td className="num">{p.rating}</td><td>{p.role ? ROLE_LABELS[p.role] ?? p.role : '–'}</td><td className="num">{p.rounds}</td>
             </tr>
           ))}
         </tbody>
