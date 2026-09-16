@@ -127,9 +127,7 @@ def _double_elim(teams: list[int], p, rng, bo5_final=True) -> int:
     uf = win(sf[0], sf[1])
     ufl = sf[1] if uf == sf[0] else sf[0]
     lf = win(l3w, ufl)
-    champ = win(uf, lf)
-    if champ == lf:  # bracket reset
-        champ = win(uf, lf)
+    champ = win(uf, lf)  # single series: VCT has no bracket reset (2026 ruleset sec 4.6.10)
     return champ
 
 

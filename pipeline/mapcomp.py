@@ -8,11 +8,11 @@ ROLE = {
     "Jett": "D", "Reyna": "D", "Raze": "D", "Yoru": "D", "Phoenix": "D",
     "Neon": "D", "Iso": "D", "Waylay": "D",
     "Omen": "C", "Brimstone": "C", "Viper": "C", "Astra": "C",
-    "Harbor": "C", "Clove": "C",
+    "Harbor": "C", "Clove": "C", "Miks": "C",
     "Sova": "I", "Breach": "I", "Skye": "I", "KAYO": "I", "Kayo": "I",
     "Fade": "I", "Gekko": "I", "Tejo": "I",
     "Killjoy": "S", "Cypher": "S", "Sage": "S", "Chamber": "S",
-    "Deadlock": "S", "Vyse": "S",
+    "Deadlock": "S", "Vyse": "S", "Veto": "S",
 }
 
 

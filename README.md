@@ -8,8 +8,8 @@ Walk-forward tested: train on everything through year Y, test on year Y+1. Lower
 
 | Train through | Test | Brier | Accuracy | Series |
 |---|---|---|---|---|
-| 2024 | 2025 | 0.219 | 63.9% | 504 |
-| 2025 | 2026 | 0.228 | 63.6% | 588 |
+| 2024 | 2025 | 0.219 | 64.5% | 504 |
+| 2025 | 2026 | 0.228 | 63.8% | 588 |
 
 Known flaw: it is overconfident at the extremes. Matchups priced at 77% win about 62% of the time.
 
@@ -34,7 +34,7 @@ The v4 update changed how series credit is split. Every kill is worth the round-
 
 A second, faster tracker (1.5x K, no January drift) runs alongside and reads as form.
 
-The match model is logistic regression on 19 A-minus-B gaps: Elo, fast Elo, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), win rate, head-to-head, LAN flag, rest, schedule strength, pistol and retake skill, map edges, and a playoff interaction.
+The match model is logistic regression on 17 A-minus-B gaps: fast Elo, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), win rate, rest, schedule strength, pistol and retake skill, map edges, and a playoff interaction.
 
 The site also ranks players by Round Swing and sets the board next to a merged Plat Chat expert top-40.
 

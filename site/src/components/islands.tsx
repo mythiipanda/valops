@@ -230,8 +230,10 @@ export function SwingBoard({ boards }: { boards: SwingBoards }) {
 }
 
 export type CompAgent = { name: string; img: string };
+export type CompTeam = { team: string; w: number; l: number };
 export type MapComp = { map: string; map_img: string; agents: CompAgent[];
-  edge: number; w: number; l: number; maps: number; pick_rate: number };
+  edge: number; w: number; l: number; maps: number; pick_rate: number;
+  top_teams: CompTeam[] };
 
 export function CompBoard({ comps }: { comps: MapComp[] }) {
   const [sel, setSel] = useState(comps[0]?.map);
@@ -248,6 +250,9 @@ export function CompBoard({ comps }: { comps: MapComp[] }) {
           </button>
         ))}
       </div>
+      <div className="compbanner" style={{ backgroundImage: `url(${c.map_img})` }}>
+        <span>{c.map}</span>
+      </div>
       <div className="compagents">
         {c.agents.map((a) => (
           <div className="agent" key={a.name}>
@@ -256,9 +261,14 @@ export function CompBoard({ comps }: { comps: MapComp[] }) {
           </div>
         ))}
       </div>
-      <p className="mut compstats">
-        {c.w}-{c.l} on {c.maps} maps · <strong>+{(c.edge * 100).toFixed(1)}</strong> pts above Elo expectation · picked {(c.pick_rate * 100).toFixed(1)}% of {c.map} maps
-      </p>
+      <div className="row compstats">
+        <div className="cstat"><b>{c.w}-{c.l}</b><span>record · {c.maps} maps</span></div>
+        <div className="cstat"><b>+{(c.edge * 100).toFixed(1)}</b><span>pts above Elo expectation</span></div>
+        <div className="cstat"><b>{(c.pick_rate * 100).toFixed(1)}%</b><span>pick rate on {c.map}</span></div>
+      </div>
+      <p className="mut compbest">Run best by {c.top_teams.map((t, i) => (
+        <span key={t.team}>{i > 0 && ' · '}{t.team} <span className="num">{t.w}-{t.l}</span></span>
+      ))}</p>
     </div>
   );
 }

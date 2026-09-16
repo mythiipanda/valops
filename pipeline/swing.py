@@ -287,7 +287,8 @@ def round_swing_board(con: sqlite3.Connection, since: str = "2026-01-01",
                       until: str | None = None, min_rounds: int = 200,
                       half_life_days: float | None = None,
                       tier_weight: bool = False,
-                      as_of: str = "2026-09-24") -> list:
+                      as_of: str = "2026-09-24",
+                      event_ids: list | None = None) -> list:
     """Per-player Round Swing ratings: role(agent)-residualized, shrunk.
 
     Each kill moves the round's win probability; a player's Round Swing is
@@ -327,11 +328,18 @@ def round_swing_board(con: sqlite3.Connection, since: str = "2026-01-01",
     if tier_weight:
         from .config import EVENTS, TIER_W
         tier_of = {eid: TIER_W.get(tier, 1.0) for eid, _y, tier, _r in EVENTS}
-    wrows = con.execute(
-        "SELECT s.date, s.event_id, pm.series_id, pm.game, pm.player_id, pm.name,"
-        " pm.agent, pm.rounds FROM player_map pm JOIN series s ON s.id=pm.series_id"
-        " WHERE s.date >= ?" + ("" if until is None else " AND s.date < ?"),
-        (since,) if until is None else (since, until)).fetchall()
+    if event_ids is not None:
+        marks = ",".join("?" * len(event_ids))
+        wrows = con.execute(
+            "SELECT s.date, s.event_id, pm.series_id, pm.game, pm.player_id, pm.name,"
+            " pm.agent, pm.rounds FROM player_map pm JOIN series s ON s.id=pm.series_id"
+            f" WHERE s.event_id IN ({marks})", tuple(event_ids)).fetchall()
+    else:
+        wrows = con.execute(
+            "SELECT s.date, s.event_id, pm.series_id, pm.game, pm.player_id, pm.name,"
+            " pm.agent, pm.rounds FROM player_map pm JOIN series s ON s.id=pm.series_id"
+            " WHERE s.date >= ?" + ("" if until is None else " AND s.date < ?"),
+            (since,) if until is None else (since, until)).fetchall()
     tot: dict[int, list] = {}  # pid -> [wresid_sum, wrounds, rounds, name, agent_counts]
     for date_s, eid, sid, game, pid, name, agent, rnd in wrows:
         sw = swing.get((sid, game, pid))

@@ -139,9 +139,14 @@ tbody tr:hover { background: rgba(0, 0, 0, 0.02); }
 .maptab span { display: block; font-size: 12px; line-height: 18px; padding: 2px 0 4px; color: var(--gray); }
 .maptab.on { border-color: var(--ink); }
 .maptab.on span { color: var(--ink); font-weight: 600; }
-.compagents { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 8px; }
+.compbanner { height: 96px; border-radius: 8px; background-size: cover; background-position: center; display: flex; align-items: flex-end; padding: 10px 14px; margin: 2px 0 12px; }
+.compbanner span { color: #fff; font-size: 20px; font-weight: 600; letter-spacing: -0.011em; text-shadow: 0 1px 8px rgba(0,0,0,.7); }
+.compagents { display: flex; gap: 14px; flex-wrap: wrap; margin: 4px 0 12px; }
 .agent { text-align: center; width: 64px; }
 .agent img { display: block; width: 56px; height: 56px; margin: 0 auto 2px; border-radius: 8px; background: var(--line); }
 .agent span { font-size: 12px; line-height: 16px; color: var(--soft); }
-.compstats { font-size: 13px; line-height: 20px; margin: 0; }
-.compstats strong { color: var(--ink); }
+.compstats { gap: 28px; margin-bottom: 8px; }
+.cstat b { display: block; font-size: 18px; line-height: 22px; font-variant-numeric: tabular-nums; }
+.cstat span { font-size: 12px; line-height: 16px; color: var(--gray); }
+.compbest { font-size: 13px; line-height: 20px; margin: 0; }
+.compbest .num { font-variant-numeric: tabular-nums; }
