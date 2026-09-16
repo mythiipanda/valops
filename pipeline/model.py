@@ -12,10 +12,10 @@ from . import features as F
 from .config import GROUPS, TEAMS
 from .elo import current_strengths
 
-# tuned 2026-09-15 overnight: dropping noisy features (lan/adr/h2h/duel) +
-# elo_x_form interaction; C=0.75. walk-forward pooled brier 0.2251 -> 0.2233,
-# 2025 0.2198/63.9% -> 0.2193/64.7%, 2026 0.2296/63.8% -> 0.2268/64.3%.
-DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff"}
+# tuned 2026-09-16 overnight: dropped elo_diff (r=0.990 vs elo_fast_diff, sign-flip),
+# added full_diff + eco_diff (full-buy / light-buy round efficiency). pooled brier
+# 0.2356 -> 0.2317 (p=0.015), no 2026 holdout regression.
+DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff", "elo_diff"}
 C = 0.75
 COLS = [c for c in
         ([f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff",

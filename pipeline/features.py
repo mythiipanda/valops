@@ -14,7 +14,7 @@ PRIOR_MAPS, PRIOR_H2H, MIN_MAPS = 5, 3, 3
 STATS = ("rating", "acs", "kast", "adr", "fkfd")
 EXTRA = ("form", "winrate", "h2h", "lan", "duel", "cov", "rest", "sos")
 RT = ("rt_pistol", "rt_retake")
-ALL = ("elo",) + STATS + EXTRA + RT
+ALL = ("elo",) + STATS + EXTRA + RT + ("full", "eco")
 
 
 def load(con: sqlite3.Connection):
@@ -169,7 +169,7 @@ def side(tm, ev, tid, opp_a: int, opp_b: int, date, ms=None, mc=None,
 
 def diffs(a: dict, b: dict, elo_diff: float, elo_fast_diff: float = 0.0) -> dict:
     d = {"elo_diff": elo_diff, "elo_fast_diff": elo_fast_diff}
-    for stat in STATS + EXTRA + RT:
+    for stat in STATS + EXTRA + RT + ("full", "eco"):
         x, y = a[stat], b[stat]
         d[f"{stat}_diff"] = 0.0 if x is None or y is None else x - y
     # conviction: elo edge and recent form pointing the same way
