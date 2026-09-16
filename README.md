@@ -40,4 +40,4 @@ The site also ranks players by Round Swing and sets the board next to a merged P
 
 ## What didn't make it
 
-A change ships only if walk-forward Brier improves on both test years. These failed the gate: margin-scaled K, decay weighting, recency-decayed K, momentum, playoff form, map-level Elo, round-level Elo, GBM, comp matchup matrix, round-win roll-up. The attempt log lives in HANDOFF.md.
+A change ships only if walk-forward Brier improves on both test years. These failed the gate: margin-scaled K, decay weighting, recency-decayed K, momentum, playoff form, map-level Elo, round-level Elo, GBM, comp matchup matrix, round-win roll-up.
