@@ -389,15 +389,58 @@ def run(con: sqlite3.Connection, event_meta: dict[int, tuple],
     return {p: (e, played.get(p, 0)) for p, e in elo.items()}
 
 
+def _prev_roster(con: sqlite3.Connection, tid: int) -> set | None:
+    """Roster fielded in the team's second-to-last qualifying series.
+
+    Mirrors the training loop in run(): series in (date, id) order, skipping
+    series where either side fielded no players. run() stores the latest such
+    roster in team_last_roster; this recovers the one before it -- the `prev`
+    that strength() used when computing the chem dock for the latest series.
+    """
+    mine = []
+    for sid, ta, tb in con.execute(
+            "SELECT id, team_a, team_b FROM series WHERE team_a=? OR team_b=?"
+            " ORDER BY date, id", (tid, tid)):
+        pm = con.execute(
+            "SELECT DISTINCT player_id, team_id FROM player_map WHERE series_id=?",
+            (sid,)).fetchall()
+        ra = {p for p, t in pm if t == ta}
+        rb = {p for p, t in pm if t == tb}
+        if ra and rb:
+            mine.append(ra if ta == tid else rb)
+    return mine[-2] if len(mine) >= 2 else None
+
+
+def prev_rosters(con: sqlite3.Connection) -> dict[int, set | None]:
+    """Second-to-last qualifying roster per team (see _prev_roster)."""
+    tids = [r[0] for r in con.execute("SELECT team_id FROM team_last_roster")]
+    return {t: _prev_roster(con, t) for t in tids}
+
+
 def current_strengths(con: sqlite3.Connection,
                       pe_tbl: str = "player_elo",
-                      tr_tbl: str = "team_last_roster") -> dict[int, float]:
-    """Mean player Elo per team from last seen roster. Unchanged roster = no chem dock."""
+                      tr_tbl: str = "team_last_roster",
+                      prev: dict | None = None) -> dict[int, float]:
+    """Current team strength, mirroring training's strength().
+
+    Roster-mean player Elo minus the identical chem dock training applied:
+    CHEM_PENALTY * (1 - |roster ∩ prev_roster| / 5), where prev_roster is the
+    roster from the team's second-to-last qualifying series. Training's
+    series_elo strengths are docked this way, so serve must be too -- otherwise
+    rebuilt teams are systematically overrated at prediction time.
+    (Empirical-Bayes shrinkage is not mirrored: serve uses final player elos.)
+    """
     elos = dict(con.execute(f"SELECT player_id, elo FROM {pe_tbl}").fetchall())
+    if prev is None:
+        prev = prev_rosters(con)
     out = {}
     for tid, r in con.execute(f"SELECT team_id, roster FROM {tr_tbl}").fetchall():
-        roster = [int(x) for x in r.split(",") if x]
-        out[tid] = (sum(elos.get(p, BASE_ELO) for p in roster) / len(roster)) if roster else BASE_ELO
+        roster = {int(x) for x in r.split(",") if x}
+        pr = prev.get(tid)
+        cont = len(roster & pr) / 5.0 if pr else 0.0
+        m = (sum(elos.get(p, BASE_ELO) for p in roster) / len(roster)
+             if roster else BASE_ELO)
+        out[tid] = m - CHEM_PENALTY * (1.0 - cont)
     return out
 
 

@@ -10,7 +10,7 @@ from sklearn.metrics import accuracy_score
 
 from . import features as F
 from .config import GROUPS, TEAMS
-from .elo import current_strengths
+from .elo import current_strengths, prev_rosters
 
 # tuned 2026-09-16 overnight: dropped elo_diff (r=0.990 vs elo_fast_diff, sign-flip),
 # added full_diff + eco_diff (full-buy / light-buy round efficiency). pooled brier
@@ -56,8 +56,10 @@ def fit_all(df: pd.DataFrame):
 
 def pairwise(con: sqlite3.Connection, clf, date, is_po: int = 0) -> tuple[dict, dict]:
     """P(win) + top factors for every ordered Shanghai pair at date."""
-    elos = current_strengths(con)
-    elos_fast = current_strengths(con, "player_elo_fast", "team_last_roster_fast")
+    pr = prev_rosters(con)
+    elos = current_strengths(con, prev=pr)
+    elos_fast = current_strengths(con, "player_elo_fast", "team_last_roster_fast",
+                                 prev=pr)
     coefs = dict(zip(COLS, clf.coef_[0]))
     date = pd.Timestamp(date, tz="UTC")
     probs, factors = {}, {}
