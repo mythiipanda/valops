@@ -22,29 +22,6 @@ const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', imp
 
   {data && (<>
   <section>
-    <h2>Power rankings</h2>
-    <p class="sub">Pure team strength, no draw involved. Ordered by Elo; Form is Stage-2-only.</p>
-    <table class="sortable">
-      <thead><tr><th>#</th><th>Team</th><th>Region</th><th>Elo</th><th>Form</th></tr></thead>
-      <tbody>
-        {(() => {
-          const rl = { AM: 'Americas', EMEA: 'EMEA', PAC: 'Pacific', CN: 'China' };
-          const info = Object.fromEntries((data.all_teams ?? []).map(t => [t.id, t]));
-          return data.teams
-            .map(t => ({ ...t, ...(info[t.id] ?? {}) }))
-            .sort((a, b) => (b.elo ?? 0) - (a.elo ?? 0))
-            .map((t, i) => (
-              <tr><td class="num">{i + 1}</td><td>{t.name}</td>
-              <td class="mut">{rl[t.region] ?? t.region ?? '–'}</td>
-              <td class="num">{t.elo != null ? Math.round(t.elo) : '–'}</td>
-              <td class="num">{t.form != null ? Math.round(t.form) : '–'}</td></tr>
-            ));
-        })()}
-      </tbody>
-    </table>
-  </section>
-
-  <section>
     <h2>Title odds</h2>
     <OddsTable teams={data.teams} client:load />
   </section>
