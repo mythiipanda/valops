@@ -129,6 +129,8 @@ const gbracket = (b: any): string => {
   </section>
 
   <section>
+    <h2>Team DNA</h2>
+    <p class="sub">Per-team round profile across 2026 maps. Bold marks the extremes.</p>
     <table class="sortable">
       <thead><tr><th></th>
         <th title="Attack round win %">atk</th>
@@ -172,24 +174,6 @@ const gbracket = (b: any): string => {
   </section>
   )}
 
-  <section>
-    <h2>Experts vs model</h2>
-    <table class="sortable">
-      <thead><tr><th>#</th><th>Player</th><th>Ours</th></tr></thead>
-      <tbody>
-        {(() => {
-          const champs = data.swing.filter(p => p.champs);
-          const rank = Object.fromEntries(champs.map((p, i) => [p.name.toLowerCase(), i + 1]));
-          const board = ['Asuna','N4RRATE','something','brawk','lukxo','erde','Dambi','Francis','PatMen','slowly','nAts','xavi8k','Sayonara','s0pp','Meteor','kamo','trent','Cryocells','UdoTan','Timotino','dos9','keiko','BuZz','jawgemo','ZmjjKK','bang','Chronicle','WsLeo','GSR','Erv','Autumn','f0rsakeN','d4v41','Jinggg','Avez','SiuFatBB','NoMan','mada','invy','splash'];
-          return board.map((name, i) => (
-            <tr><td class="num">{i + 1}</td><td>{name}</td>
-            <td class="num">{rank[name.toLowerCase()] ?? '–'}</td></tr>
-          ));
-        })()}
-      </tbody>
-    </table>
-  </section>
-
   <section class="method">
     <h2>How it works</h2>
     <div class="team">
@@ -200,7 +184,7 @@ const gbracket = (b: any): string => {
       <div class="teamhead"><span>Player Elo</span></div>
       <div class="formula">R&#8242; = R + K(S &#8722; E)</div>
       <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
-      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more, and big stages move ratings more than group games. Every offseason, ratings drift 20% back toward average.</p>
+      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more. Every offseason, ratings drift 30% back toward average.</p>
       <p>Two things changed in v4. First, credit for a series win is split by Round Swing, not kills: each kill is worth the change in round-win probability it caused, so a 1v3 clutch pays more than a cleanup kill. Second, ratings shrink toward average by sample size instead of a hard cutoff: a player with n maps counts as n/(n+20) themselves and 20/(n+20) average.</p>
       <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. The model runs two trackers side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The site's Form column is different: it takes each team's pre-Stage-2 rating and updates it on Stage 2 series alone, so a Stage 2 title run shows up even if the rest of the year was mediocre.</p>
     </div>
@@ -211,7 +195,7 @@ const gbracket = (b: any): string => {
     <div class="team">
       <div class="teamhead"><span>Win probability</span></div>
       <div class="formula">P(A beats B) = 1 / (1 + e<sup>&#8722;w&#183;x</sup>)</div>
-      <p>A plain logistic regression turns the gaps into a probability. The weights are readable and the rating gaps carry the most weight.</p>
+      <p>A plain logistic regression turns the gaps into a probability. The biggest weights sit on recent form, series win rate, and pistol rounds; features are correlated, so single weights are not all intuitive.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>Evaluation</span></div>
@@ -241,7 +225,7 @@ const gbracket = (b: any): string => {
       <tbody>
         {data.validation.filter(v => v.test).map((v) => (
           <tr><td class="num">thru {v.train_thru} → {v.test}</td>
-          <td class="num">{v.brier}</td><td class="num">{v.acc}</td><td class="num">{v.n_test}</td></tr>
+          <td class="num">{v.brier}</td><td class="num">{(v.acc * 100).toFixed(1)}%</td><td class="num">{v.n_test}</td></tr>
         ))}
         <tr><td class="num">coinflip</td>
         <td class="num">{data.validation.find(v => v.baseline_coinflip_brier)?.baseline_coinflip_brier}</td><td class="num">–</td><td class="num">–</td></tr>
