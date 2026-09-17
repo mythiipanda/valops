@@ -15,12 +15,35 @@ from .elo import current_strengths, prev_rosters
 # tuned 2026-09-16 overnight: dropped elo_diff (r=0.990 vs elo_fast_diff, sign-flip),
 # added full_diff + eco_diff (full-buy / light-buy round efficiency). pooled brier
 # 0.2356 -> 0.2317 (p=0.015), no 2026 holdout regression.
-DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff", "elo_diff"}
+# Zero-sum fix (2026-09-17): every matchup must satisfy P(B beats A) = 1 - P(A beats B).
+# Root cause of the old violation (e.g. PRX/NS summing to 0.9782): the fitted
+# intercept (-0.0326) plus elo_x_form_diff = elo_diff*form_diff, the only
+# non-antisymmetric feature (product of two diffs is symmetric under swapping
+# sides). Fix: (1) drop elo_x_form_diff from COLS, (2) train with
+# fit_intercept=False, (3) symmetrize training data (each series in both
+# orientations). All remaining features are pure diffs, so with no intercept
+# z(B,A) = -z(A,B) exactly and predict_proba complements to 1.
+DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff", "elo_diff", "elo_x_form_diff"}
 C = 0.75
 COLS = [c for c in
         ([f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff",
                                         "elo_x_form_diff"])
         if c not in DROP]
+
+
+def _fit_zerosum(X: pd.DataFrame, y) -> LogisticRegression:
+    """Symmetrized, intercept-free logistic fit.
+
+    Each training series is included in both orientations (features negated,
+    label flipped), so the model cannot learn an orientation bias. With no
+    intercept and all-antisymmetric features, z(-x) = -z(x) and the two
+    orientations' probabilities sum to exactly 1.
+    """
+    Xv = np.asarray(X.fillna(0.0), dtype=float)
+    yv = np.asarray(y, dtype=float)
+    Xs = np.vstack([Xv, -Xv])
+    ys = np.concatenate([yv, 1.0 - yv])
+    return LogisticRegression(max_iter=2000, C=C, fit_intercept=False).fit(Xs, ys)
 
 
 def brier(y, p):
@@ -38,7 +61,7 @@ def evaluate(df: pd.DataFrame):
         te_df = df[(df["date"].dt.year == te) & (df["event_id"] != 2766)]
         if not len(tr) or not len(te_df):
             continue
-        clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
+        clf = _fit_zerosum(tr[COLS], tr["label"])
         p = clf.predict_proba(te_df[COLS].fillna(0.0))[:, 1]
         reps.append({"train_thru": tr_end, "test": te, "n_test": len(te_df),
                      "brier": round(brier(te_df["label"], p), 4),
@@ -50,7 +73,7 @@ def evaluate(df: pd.DataFrame):
 
 def fit_all(df: pd.DataFrame):
     tr = df[df["event_id"] != 2766]
-    clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
+    clf = _fit_zerosum(tr[COLS], tr["label"])
     return clf, list(zip(COLS, clf.coef_[0]))
 
 
