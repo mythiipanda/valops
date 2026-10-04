@@ -1,12 +1,63 @@
 ---
 import '../styles.css';
-import { Matchup, OddsTable, SwingBoard, EloTable, CompBoard } from '../components/islands';
+import { Matchup, OddsTable, SwingBoard, PowerTable, CompBoard, GlobalSearch } from '../components/islands';
 import { readFileSync, existsSync } from 'node:fs';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
+const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
 
 const has = existsSync(new URL('../../public/data.json', import.meta.url));
 const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', import.meta.url), 'utf8')) : null;
 const hasComps = existsSync(new URL('../../public/comps.json', import.meta.url));
 const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.json', import.meta.url), 'utf8')) : null;
+const hasProspects = existsSync(new URL('../../public/prospects.json', import.meta.url));
+const prospects = hasProspects ? JSON.parse(readFileSync(new URL('../../public/prospects.json', import.meta.url), 'utf8')) : null;
+const prospectStages = [
+  { id: 'all', label: 'All 2026' },
+  { id: 'stage3', label: 'Stage 3' },
+  { id: 'stage2', label: 'Stage 2' },
+  { id: 'stage1', label: 'Stage 1' },
+];
+
+const searchIndex = (() => {
+  if (!data) return null;
+  const teams = (data.all_teams ?? data.teams).map((t: any) => ({ id: t.id, name: t.name }));
+  const seen = new Set<number>();
+  const players: { id: number; name: string; teamId: number | null }[] = [];
+  for (const t of data.teams) for (const p of t.roster ?? []) {
+    if (seen.has(p.id)) continue; seen.add(p.id);
+    players.push({ id: p.id, name: p.name, teamId: t.id });
+  }
+  for (const rows of Object.values(data.swing_boards ?? {})) for (const p of rows as any[]) {
+    if (seen.has(p.player_id)) continue; seen.add(p.player_id);
+    players.push({ id: p.player_id, name: p.name, teamId: null });
+  }
+  if (prospects) for (const rows of Object.values(prospects.boards ?? {})) for (const p of rows as any[]) {
+    if (seen.has(p.player_id)) continue; seen.add(p.player_id);
+    players.push({ id: p.player_id, name: p.name, teamId: null });
+  }
+  players.sort((a, b) => a.name.localeCompare(b.name));
+  return { teams, players };
+})();
+
+const regionMap: Record<number, string> = data
+  ? Object.fromEntries((data.all_teams ?? []).map((t: any) => [t.id, t.region]))
+  : {};
+const powerOf = (id: number): number => {
+  const opps = data.teams.filter((t: any) => t.id !== id);
+  let s = 0, n = 0;
+  for (const o of opps) {
+    const m = data.matchups.find((x: any) => x.a === id && x.b === o.id);
+    if (m) { s += m.p; n++; }
+  }
+  return n ? s / n : 0;
+};
+const powerMap: Record<number, number> = data
+  ? Object.fromEntries(data.teams.map((t: any) => [t.id, powerOf(t.id)]))
+  : {};
+const swingMap: Record<string, number> = data
+  ? Object.fromEntries((data.swing_boards?.all ?? []).map((r: any) => [r.name, r.rating]))
+  : {};
 
 const gname = (b: any, id: number) => b.teams.find((t: any) => t.id === id)?.name ?? String(id);
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -19,18 +70,25 @@ const gbracket = (b: any): string => {
   const label = (x: number, y: number, t: string) =>
     `<text x="${x}" y="${y - 10}" font-size="12" font-weight="600" fill="${LAB}">${t}</text>`;
   const match = (x: number, y: number, m: any, lab: string): string => {
+    const played = !!m.played;
     const pa = m.w === m.a ? m.pw : 1 - m.pw;
-    let s = label(x, y, lab);
+    let s = label(x, y, lab + (played ? " · Final" : ""));
     s += `<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="6" fill="#ffffff" stroke="${LINE}"/>`;
     s += `<line x1="${x}" y1="${y + RH}" x2="${x + BW}" y2="${y + RH}" stroke="${LINE}"/>`;
     s += `<line x1="${x + BW - CW}" y1="${y}" x2="${x + BW - CW}" y2="${y + BH}" stroke="${LINE}"/>`;
-    [{ id: m.a, p: pa }, { id: m.b, p: 1 - pa }].forEach((r, i) => {
+    [{ id: m.a, p: pa, sc: m.score_a }, { id: m.b, p: 1 - pa, sc: m.score_b }].forEach((r, i) => {
       const win = r.id === m.w, yy = y + i * RH, cx = x + BW - CW;
       const fg = win ? INK : GRAY, fw = win ? ' font-weight="600"' : "";
       s += `<text x="${x + 12}" y="${yy + 19}" font-size="12.5"${fw} fill="${fg}">${nm(r.id)}</text>`;
       if (win) s += `<rect x="${cx}" y="${yy}" width="${CW}" height="${RH}" fill="${ACC}"/>`;
-      s += `<text x="${cx + CW / 2}" y="${yy + 19}" font-size="12.5" text-anchor="middle"${fw} fill="${win ? "#ffffff" : GRAY}" style="font-variant-numeric: tabular-nums">${Math.round(r.p * 100)}</text>`;
+      const cell = played ? r.sc : Math.round(r.p * 100);
+      s += `<text x="${cx + CW / 2}" y="${yy + 19}" font-size="12.5" text-anchor="middle"${fw} fill="${win ? "#ffffff" : GRAY}" style="font-variant-numeric: tabular-nums">${cell}</text>`;
     });
+    if (played && m.pre_p != null) {
+      const col = m.hit ? "#2e7d32" : "#c0392b";
+      const mark = m.hit ? "✓" : "✗";
+      s += `<text x="${x}" y="${y + BH + 17}" font-size="11.5" fill="${col}">pre-game: ${nm(m.pre_pick)} ${Math.round(m.pre_p * 100)}% ${mark}</text>`;
+    }
     return `<g>${s}</g>`;
   };
   const qualified = (x: number, y: number, id: number, tag: string): string => {
@@ -43,7 +101,7 @@ const gbracket = (b: any): string => {
   };
   const g = b.gsl;
   const P = (d: string) => `<path d="${d}" fill="none" stroke="${CONN}" stroke-width="1.5"/>`;
-  let s = `<svg viewBox="-8 -30 788 340" xmlns="http://www.w3.org/2000/svg" font-family="Inter Variable, Inter, -apple-system, sans-serif">`;
+  let s = `<svg viewBox="-8 -30 788 340" xmlns="http://www.w3.org/2000/svg" font-family="Inter Variable, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">`;
   s += P("M200,30 H230 V70 H280") + P("M200,140 H230 V100 H280");
   s += P("M200,30 H230 V235 H200") + P("M200,140 H230 V265 H200");
   s += P("M200,250 H210 V265 H280");
@@ -57,11 +115,79 @@ const gbracket = (b: any): string => {
   s += qualified(X[2], 220, g.decider.w, "2-1");
   return s + `</svg>`;
 };
+const pshort: Record<string, string> = { uqf: "QF", lr1: "Lower R1", usf: "SF", lr2: "Lower R2", uf: "Upper final", lr3: "Lower R3", lf: "Lower final", gf: "Grand final" };
+const pbracket = (b: any, cols: string[][], viewW: number, viewH: number, elim: Set<number> = new Set()): string => {
+  const BW = 200, CW = 44, RH = 30, BH = 60;
+  const INK = "#111111", GRAY = "rgba(0,0,0,0.4)", LINE = "#eceae4",
+        ACC = "#a36844", CONN = "rgba(0,0,0,0.25)", LAB = "#444444";
+  const byId: Record<string, any> = {}, rmeta: Record<string, any> = {};
+  for (const r of b.rounds) { rmeta[r.id] = r; for (const s of r.slots) byId[s.id] = { m: s, r }; }
+  const nm = (id: number) => esc(b.teams.find((t: any) => t.id === id)?.name ?? String(id));
+  const card = (x: number, y: number, sid: string): string => {
+    const { m, r } = byId[sid];
+    const played = !!m.played;
+    const pa = m.w === m.a ? m.pw : 1 - m.pw;
+    const lab = pshort[r.id] + (played ? " · Final" : ` · ${r.date}`) + (r.bo === 5 ? " · Bo5" : "");
+    let s = `<text x="${x}" y="${y - 10}" font-size="12" font-weight="600" fill="${LAB}">${lab}</text>`;
+    s += `<rect x="${x}" y="${y}" width="${BW}" height="${BH}" rx="6" fill="#ffffff" stroke="${LINE}"/>`;
+    s += `<line x1="${x}" y1="${y + RH}" x2="${x + BW}" y2="${y + RH}" stroke="${LINE}"/>`;
+    s += `<line x1="${x + BW - CW}" y1="${y}" x2="${x + BW - CW}" y2="${y + BH}" stroke="${LINE}"/>`;
+    [{ id: m.a, p: pa, sc: m.score_a }, { id: m.b, p: 1 - pa, sc: m.score_b }].forEach((rr, i) => {
+      const win = rr.id === m.w, dead = elim.has(rr.id), yy = y + i * RH, cx = x + BW - CW;
+      const fg = dead ? "rgba(0,0,0,0.28)" : win ? INK : GRAY, fw = win && !dead ? ' font-weight="600"' : "";
+      s += `<text x="${x + 12}" y="${yy + 19}" font-size="12.5"${fw} fill="${fg}">${nm(rr.id)}</text>`;
+      if (win && !dead) s += `<rect x="${cx}" y="${yy}" width="${CW}" height="${RH}" fill="${ACC}"/>`;
+      const cell = played ? rr.sc : Math.round(rr.p * 100);
+      s += `<text x="${cx + CW / 2}" y="${yy + 19}" font-size="12.5" text-anchor="middle"${fw} fill="${win && !dead ? "#ffffff" : dead ? "rgba(0,0,0,0.28)" : GRAY}" style="font-variant-numeric: tabular-nums">${cell}</text>`;
+    });
+    if (played && m.pre_p != null) {
+      const col = m.hit ? "#2e7d32" : "#c0392b";
+      const mark = m.hit ? "✓" : "✗";
+      s += `<text x="${x}" y="${y + BH + 17}" font-size="11.5" fill="${col}">pre-game: ${nm(m.pre_pick)} ${Math.round(m.pre_p * 100)}% ${mark}</text>`;
+    } else if (m.conditional) {
+      s += `<text x="${x}" y="${y + BH + 17}" font-size="11.5" fill="${GRAY}">if favorites win</text>`;
+    }
+    return `<g>${s}</g>`;
+  };
+  const P = (d: string) => `<path d="${d}" fill="none" stroke="${CONN}" stroke-width="1.5"/>`;
+  const X = cols.map((_, i) => i * 280);
+  let s = `<svg viewBox="-8 -30 ${viewW} ${viewH}" xmlns="http://www.w3.org/2000/svg" font-family="Inter Variable, -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Helvetica, Arial, sans-serif">`;
+  return { s, card, X, P };
+};
+const pupper = (b: any): string => {
+  const elim = new Set<number>(b.elim ?? []);
+  const { s, card, X, P } = pbracket(b, [["qf1","qf2","qf3","qf4"],["usf1","usf2"],["uf"]], 788, 440, elim) as any;
+  let h = s;
+  h += P("M200,30 H240 V85 H280") + P("M200,140 H240 V85 H280");
+  h += P("M200,250 H240 V305 H280") + P("M200,360 H240 V305 H280");
+  h += P("M480,85 H520 V195 H560") + P("M480,305 H520 V195 H560");
+  const Y = [0, 110, 220, 330];
+  ["qf1","qf2","qf3","qf4"].forEach((sid, i) => { h += card(X[0], Y[i], sid); });
+  h += card(X[1], 55, "usf1") + card(X[1], 275, "usf2") + card(X[2], 165, "uf");
+  return h + "</svg>";
+};
+const plower = (b: any): string => {
+  const elim = new Set<number>(b.elim ?? []);
+  const { s, card, X, P } = pbracket(b, [["lr1a","lr1b"],["lr2a","lr2b"],["lr3"],["lf"]], 1068, 240, elim) as any;
+  let h = s;
+  h += P("M200,30 H280") + P("M200,140 H280");
+  h += P("M480,30 H520 V85 H560") + P("M480,140 H520 V85 H560");
+  h += P("M760,85 H840");
+  h += card(X[0], 0, "lr1a") + card(X[0], 110, "lr1b");
+  h += card(X[1], 0, "lr2a") + card(X[1], 110, "lr2b");
+  h += card(X[2], 55, "lr3") + card(X[3], 55, "lf");
+  return h + "</svg>";
+};
+const pfinal = (b: any): string => {
+  const elim = new Set<number>(b.elim ?? []);
+  const { s, card } = pbracket(b, [["gf"]], 280, 130, elim) as any;
+  return s + card(0, 0, "gf") + "</svg>";
+};
 ---
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>VALOPS Champions Shanghai 2026 predictor</title>
 </head>
 <body>
@@ -69,23 +195,62 @@ const gbracket = (b: any): string => {
   <header class="hero">
     <h1>Champions Shanghai</h1>
     {data && <p class="favline"><strong>{data.teams[0].name}</strong> {(data.teams[0].title * 100).toFixed(1)}% to win</p>}
-    <p class="dateline">Sep 24 to Oct 18 · 16 teams</p>
+    <p class="dateline">Sep 24 to Oct 18 · 16 teams{data?.run_at && ` · model run ${new Date(data.run_at).toLocaleString("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} ET`}</p>
+    {searchIndex && <GlobalSearch index={searchIndex} client:load />}
   </header>
 
   {data && (<>
-  <section>
+  <nav class="secnav" aria-label="Sections">
+    <a href="#sec-odds">Odds</a>
+    <a href="#sec-matchup">Matchup</a>
+    <a href="#sec-track">Record</a>
+    <a href="#sec-groups">Groups</a>
+    <a href="#sec-playoff">Playoff</a>
+    <a href="#sec-mvp">MVP</a>
+    <a href="#sec-power">Strength</a>
+    <a href="#sec-teams">Teams</a>
+    <a href="#sec-stats">Stats</a>
+    <a href="#sec-swing">Swing</a>
+    {prospects && <a href="#sec-prospects">Prospects</a>}
+    {comps && <a href="#sec-comps">Comps</a>}
+    <a href="#sec-method">Method</a>
+  </nav>
+
+  <section id="sec-odds">
     <h2>Title odds</h2>
     <OddsTable teams={data.teams} client:load />
   </section>
 
-  <section>
+  <section id="sec-matchup">
     <h2>Matchup</h2>
     <Matchup teams={data.teams} matchups={data.matchups} client:load />
   </section>
 
-  <section>
+  {data.track_record?.n > 0 && (
+  <section id="sec-track">
+    <h2>Track record</h2>
+    <p class="sub">Picks locked in before each series.</p>
+    <p class="num">{data.track_record.right}–{data.track_record.wrong} · {(data.track_record.acc * 100).toFixed(1)}% · Brier {data.track_record.brier.toFixed(3)}</p>
+    <table class="sortable">
+      <thead><tr><th>Date</th><th>Match</th><th>Pick</th><th>Winner</th><th></th></tr></thead>
+      <tbody>
+        {[...data.track_record.games].reverse().map((g: any) => (
+          <tr>
+            <td class="num">{g.date}</td>
+            <td>{g.team_a_name} v {g.team_b_name}</td>
+            <td>{g.pred_name} <span class="mut">{(Math.max(g.p_a, 1 - g.p_a) * 100).toFixed(0)}%</span></td>
+            <td>{g.winner_name}</td>
+            <td class="num">{g.correct ? '✓' : '✗'}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </section>
+  )}
+
+  <section id="sec-groups">
     <h2>Groups</h2>
-    <p class="sub">Most likely path through each group — favorites win every match. Full advance odds below each bracket.</p>
+    <p class="sub">Most likely path through each group.</p>
     <div class="groups">
     {Object.entries(data.bracket).map(([g, b]) => (
       <div class="group">
@@ -107,28 +272,72 @@ const gbracket = (b: any): string => {
     </div>
   </section>
 
-  <section>
-    <h2>Team Elo</h2>
-    <p class="sub">Roster-mean player Elo across every 2026 VCT regional team. Form is Stage-2-only Elo: each team's pre-Stage-2 rating updated on Stage 2 series alone. &#916; is form minus Elo.</p>
-    <EloTable teams={data.all_teams ?? data.teams} client:load />
+  {data.playoff_bracket && (
+  <section id="sec-playoff">
+    <h2>Playoff bracket</h2>
+    <p class="sub">Model pick for every series, from fresh playoff odds. Later rounds assume favorites win and update as series are played.</p>
+    <div class="group">
+      <div class="grouphead"><span>Upper bracket</span></div>
+      <div class="gsvgwrap"><div class="gsvg" set:html={pupper(data.playoff_bracket)} /></div>
+    </div>
+    <div class="group">
+      <div class="grouphead"><span>Lower bracket</span></div>
+      <div class="gsvgwrap"><div class="gsvg" set:html={plower(data.playoff_bracket)} /></div>
+    </div>
+    <div class="group">
+      {(() => { const gf = data.playoff_bracket.rounds.find((r: any) => r.id === "gf");
+        return <div class="grouphead"><span>{gf.label} · {gf.date}{gf.bo === 5 ? " · Bo5" : ""}</span></div>; })()}
+      <div class="gsvgwrap"><div class="gsvg" set:html={pfinal(data.playoff_bracket)} /></div>
+      <div class="gadvance">
+        <div class="gadvance-title">To win it all</div>
+        {(data.playoff_bracket.odds as any[]).map((o: any) => (
+          <div class={`grow${(data.playoff_bracket.elim ?? []).includes(o.id) ? " elim" : ""}`}>
+            <div class="grow-top"><span class="gname">{o.name}</span>
+            <span class="num">{(o.title * 100).toFixed(1)}</span></div>
+            <div class="bar"><i style={{ width: `${o.title * 100}%` }} /></div>
+            <div class="gdetail">make final {(o.final * 100).toFixed(0)}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+  )}
+
+  {data.swing_boards?.champions?.length > 0 && (
+  <section id="sec-mvp">
+    <h2>Champions MVP</h2>
+    <p class="sub">Round Swing leaders at Champions Shanghai — round-win probability added per 100 rounds, agent-adjusted, small samples shrunk. Updates as the tournament is played.</p>
+    <SwingBoard boards={data.swing_boards} stages={[{ id: 'champions', label: 'Champions 2026' }]} hidePool client:load />
+  </section>
+  )}
+
+  <section id="sec-power">
+    <h2>Team strength</h2>
+    <p class="sub">Average model win probability against the 16-team field.</p>
+    <PowerTable teams={data.teams} matchups={data.matchups} regions={regionMap} client:load />
   </section>
 
-  <section>
+  <section id="sec-teams">
     <h2>Teams</h2>
     {data.teams.map(t => (
-      <div class="team">
+      <div class="team" id={"teamcard-"+t.id}>
         <div class="teamhead"><span>{t.name}</span>
-        <span class="num mut">avg {t.roster.length ? Math.round(t.roster.reduce((s, p) => s + p.elo, 0) / t.roster.length) : '–'}</span></div>
-        {t.roster.map(p => (
-          <div class="prow"><span>{p.name}</span>
-          <div class="bar"><i style={{ width: `${Math.max(4, Math.min(100, (p.elo - 1400) / 4))}%` }} /></div>
-          <span class="num mut">{Math.round(p.elo)}</span></div>
-        ))}
+        <span class="num mut" title="Average model win probability vs the Champions field">power {(powerMap[t.id] * 100).toFixed(1)}</span></div>
+        {t.roster.map(p => {
+          const sw: number | undefined = swingMap[p.name];
+          const w = sw == null ? 4 : Math.max(4, Math.min(100, 4 + (sw + 1.25) / 2.55 * 96));
+          const lab = sw == null ? '–' : (sw > 0 ? '+' : '') + sw.toFixed(2);
+          return (
+          <div class="prow" id={"playerrow-"+p.id}><span>{p.name}</span>
+          <div class="bar"><i style={{ width: `${w}%` }} /></div>
+          <span class="num mut" title="Round Swing, 2026">{lab}</span></div>
+          );
+        })}
       </div>
     ))}
   </section>
 
-  <section>
+  <section id="sec-stats">
     <h2>Team Stats</h2>
     <table class="sortable">
       <thead><tr><th></th>
@@ -159,65 +368,80 @@ const gbracket = (b: any): string => {
     </table>
   </section>
 
-  <section>
+  <section id="sec-swing">
     <h2>2026 Round Swing leaders</h2>
-    <p class="sub">Round-win probability added per 100 rounds, agent-adjusted and shrunk. The full-year view weights recent form and international games more; use the stage filter to slice it.</p>
+    <p class="sub">Round-win probability added per 100 rounds, agent-adjusted, small samples shrunk.</p>
     <SwingBoard boards={data.swing_boards} client:load />
   </section>
 
+  {prospects && (
+  <section id="sec-prospects">
+    <h2>Prospects</h2>
+    <p class="sub">Round Swing leaders from 2026 NA Challengers, same formula. Through {prospects.as_of}.</p>
+    <SwingBoard boards={prospects.boards} stages={prospectStages} hidePool client:load />
+  </section>
+  )}
+
   {comps && (
-  <section>
+  <section id="sec-comps">
     <h2>Best comps</h2>
-    <p class="sub">Best 5-agent comp per map from 2026 games, scored by wins above Elo expectation. Shrunk toward zero by sample size.</p>
+    <p class="sub">Best 5-agent comp per map, Champions pool. Ranked by wins above what Elo predicted. 8+ maps to qualify, mirrors excluded, small samples shrunk.</p>
     <CompBoard comps={comps} client:load />
   </section>
   )}
 
-  <section class="method">
+  <section class="method" id="sec-method">
     <h2>How it works</h2>
     <div class="team">
       <div class="teamhead"><span>The data</span></div>
-      <p>Every pro series, map by map and round by round: scores, kills, agents, economy. It lands in one database of teams, players, and maps, and every feature below is computed from history before match day. Nothing peeks at the future.</p>
+      <p>Every pro series — scores, kills, agents, economy — in one database. Every number on this page comes from games played before match day.</p>
     </div>
     <div class="team">
-      <div class="teamhead"><span>Player Elo</span></div>
-      <div class="formula">R&#8242; = R + K(S &#8722; E)</div>
-      <div class="formula">E = 1 / (1 + 10<sup>(R<sub>b</sub> &#8722; R<sub>a</sub>)/400</sup>)</div>
-      <p>Ratings live on players, not teams, so they survive roster moves. Beating a stronger team moves a rating more. Every offseason, ratings drift 30% back toward average.</p>
-      <p>Two things changed in v4. First, credit for a series win is split by Round Swing, not kills: each kill is worth the change in round-win probability it caused, so a 1v3 clutch pays more than a cleanup kill. Second, ratings shrink toward average by sample size instead of a hard cutoff: a player with n maps counts as n/(n+20) themselves and 20/(n+20) average.</p>
-      <p>A team's rating is the mean of its five players, minus a penalty for a new lineup. The model runs two trackers side by side: a slow one for true strength and a fast one that reacts 1.5x to every result and never regresses. The site's Form column is different: it takes each team's pre-Stage-2 rating and updates it on Stage 2 series alone, so a Stage 2 title run shows up even if the rest of the year was mediocre.</p>
+      <div class="teamhead"><span>Player ratings</span></div>
+      <p>Every player has a rating. Wins raise it, losses lower it, and beating a strong team moves it more than beating a weak one. Ratings belong to players, not teams, so they survive roster moves. Each offseason they drift 30% back toward average.</p>
+      <div class="formula" set:html={tex(String.raw`R' = R + K(S - E) \qquad E = \frac{1}{1 + 10^{(R_b - R_a)/400}}`)} />
+      <p>K is the step size, S is the result weighted by how much you drove it, E is how likely it looked beforehand.</p>
+      <p>When a team wins a series, the credit goes to whoever swung the rounds. Every kill is worth the round-win probability it moved — a 1v3 clutch pays more than a cleanup kill on a save round. Small samples shrink toward league average: a player with n maps counts as n/(n+20) themselves and 20/(n+20) average.</p>
+      <div class="formula" set:html={tex(String.raw`\hat{R} = \frac{n}{n+20}R + \frac{20}{n+20}\bar{R}`)} />
+      <p>A team's rating is its five players averaged, minus a penalty for a fresh lineup. Two trackers run side by side: a slow one for true strength, and a fast one that reacts 1.5x to every result and never regresses.</p>
     </div>
     <div class="team">
-      <div class="teamhead"><span>The features</span></div>
-      <p>Each matchup becomes a list of A-minus-B gaps: rating, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), series win rate, strength of schedule, days of rest, agent-composition coverage, pistol and retake rates. Small samples get smoothed toward average, so a three-map hot streak cannot break the math.</p>
+      <div class="teamhead"><span>Round Swing</span></div>
+      <p>For every kill, ask: how much did this change the round's win probability? Add it up per 100 rounds, adjust for agents, and shrink small samples toward average.</p>
+      <div class="formula" set:html={tex(String.raw`\mathrm{Swing} = \frac{100}{R}\sum \Delta P(\text{round win})`)} />
     </div>
     <div class="team">
-      <div class="teamhead"><span>Win probability</span></div>
-      <div class="formula">P(A beats B) = 1 / (1 + e<sup>&#8722;w&#183;x</sup>)</div>
-      <p>A plain logistic regression turns the gaps into a probability. The biggest weights sit on recent form, series win rate, and pistol rounds; features are correlated, so single weights are not all intuitive.</p>
+      <div class="teamhead"><span>What the model looks at</span></div>
+      <p>Every matchup becomes a list of A-minus-B gaps: rating, recent form, last-60-day stats (rating, ACS, KAST, first-kill differential), series win rate, strength of schedule, days of rest, agent coverage, pistol and retake rates. Thin samples get smoothed toward average.</p>
     </div>
     <div class="team">
-      <div class="teamhead"><span>Evaluation</span></div>
-      <p>We train on past years and test on the next one. Lower Brier is better.</p>
+      <div class="teamhead"><span>Turning gaps into a probability</span></div>
+      <div class="formula" set:html={tex(String.raw`P(A \text{ beats } B) = \frac{1}{1 + e^{-w \cdot x}}`)} />
+      <p>A plain logistic regression: one learned weight per gap, squashed into a number between 0 and 1. The heaviest weights sit on recent form, series win rate, and pistol rounds. Both sides always add to exactly 1.</p>
+    </div>
+    <div class="team">
+      <div class="teamhead"><span>Does it work</span></div>
+      <p>Train on past years, test on the next one. The score is Brier: the average squared gap between the probability and what happened. 0 is perfect, 0.25 is flipping a coin.</p>
+      <div class="formula" set:html={tex(String.raw`\mathrm{Brier} = \frac{1}{N}\sum_{i=1}^{N}(p_i - o_i)^2`)} />
       <div class="brier">
         {data.validation.filter(v => v.test).map((v) => (
           <div class="brow"><span class="blabel">{v.test} model</span><div class="btrack"><i style={`width: ${(v.brier / 0.3 * 100).toFixed(1)}%`}></i></div><span class="num">{v.brier.toFixed(3)}</span></div>
           <div class="brow dim"><span class="blabel">{v.test} coinflip</span><div class="btrack"><i style="width: 83.3%"></i></div><span class="num">0.250</span></div>
         ))}
       </div>
-      <p>At the extremes the model is overconfident: matchups priced at 77% win 62% of the time.</p>
+      <p>Overconfident at the extremes: matchups priced at 77% win 62% of the time.</p>
       <p>A change ships only if walk-forward Brier improves.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>Simulation</span></div>
-      <p>We run 10,000 sims over the real groups and bracket.</p>
+      <p>10,000 sims over the real groups and bracket.</p>
     </div>
     <div class="team">
       <div class="teamhead"><span>Player scores</span></div>
       <div class="formula">swing(kill) = P(win round | after) &#8722; P(win round | before)</div>
-      <p>Every kill is worth the round-win probability it added. A first blood in a 1v1 is worth far more than a trade in a 5v2, so stat padding dies here. The probabilities come from 2023-2024 rounds, keyed on attackers alive, defenders alive, and whether the spike is planted. Credit is zero-sum: what the killer gains, the victim loses. Plants and defuses move the state but earn no direct credit.</p>
+      <p>Every kill is worth the round-win probability it added. A first blood in a 1v1 is worth far more than a trade in a 5v2. The probabilities come from 2023-2024 rounds, keyed on attackers alive, defenders alive, and whether the spike is planted. Credit is zero-sum: what the killer gains, the victim loses. Plants and defuses move the state but earn no direct credit.</p>
       <div class="formula">Round Swing = &#931; (swing &#8722; agent average) / rounds &#215; 100</div>
-      <p>Each player is measured against the prior-year average for their agent, so a duelist is judged against duelists. The result is per 100 rounds, then shrunk toward zero for small samples. The full-year board weights recent splits more heavily and counts international games more than regional ones, the same way the model trusts recent form and big stages; stage filters show each split raw. This replaced the old kill-share swing and the space metric.</p>
+      <p>Each player is measured against the prior-year average for their agent, so a duelist is judged against duelists. The result is per 100 rounds, then shrunk toward zero for small samples. The full-year board weights recent splits more heavily and counts international games more than regional ones; stage filters show each split raw.</p>
     </div>
     <table class="sortable">
       <thead><tr><th>Split</th><th>Brier</th><th>Acc</th><th>n</th></tr></thead>

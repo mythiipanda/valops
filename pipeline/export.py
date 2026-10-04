@@ -117,7 +117,10 @@ def stage2_form(con) -> dict:
 
 
 def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
-           factors, swing_boards, bracket_view, date: str, out: str = "site/public/data.json"):
+           factors, swing_boards, bracket_view, date: str, out: str = "site/public/data.json",
+           track: dict | None = None, playoff_bracket: dict | None = None):
+    from datetime import datetime, timezone
+    run_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     elos = dict(con.execute("SELECT player_id, elo FROM player_elo").fetchall())
     elos_fast = dict(con.execute("SELECT player_id, elo FROM player_elo_fast").fetchall())
     team_group = {t: g for g, ts in GROUPS.items() for t in ts}
@@ -191,15 +194,18 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
                           "elo": round(slow, 1), "form": round(form, 1)})
     all_teams.sort(key=lambda t: -t["elo"])
     payload = {"as_of": date,
+               "run_at": run_at,
                "groups": {g: [{"id": t, "name": TEAMS[t]} for t in ts]
                           for g, ts in GROUPS.items()},
                "teams": teams, "matchups": matchups,
                "all_teams": all_teams,
                "coefs": [{"f": f, "w": round(float(w), 4)} for f, w in coefs],
                "validation": reports,
+               "track_record": track,
                "swing": swing_boards.get("all", []),
                "swing_boards": swing_boards,
                "bracket": bracket_view,
+               "playoff_bracket": playoff_bracket,
                "dna": team_dna(con)}
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(json.dumps(payload))

@@ -1,6 +1,7 @@
 """vlrdevapi -> SQLite. Cached raw JSON, resumable, concurrent fetch + serial writes."""
 
 import json
+import os
 import random
 import sqlite3
 import threading
@@ -12,6 +13,16 @@ from vlrdevapi import VLRClient
 
 from .config import EVENTS, RAW_DIR
 from .db import connect
+
+
+def _fix_proxy_env():
+    """httpx parses NO_PROXY entries as URL patterns and chokes on bracketed
+    IPv6 literals (e.g. [::1]) with 'Invalid port'. Strip those entries."""
+    for k in ("NO_PROXY", "no_proxy"):
+        v = os.environ.get(k)
+        if v:
+            os.environ[k] = ",".join(
+                p for p in v.split(",") if not p.strip().startswith("["))
 
 WORKERS, RPS = 4, 2.0
 _local = threading.local()
@@ -46,8 +57,21 @@ def _fetch_series(args):
     sid, m, t1, t2, raw = args
     time.sleep(random.uniform(0, 0.2))
     c = _client()
-    info = _cache(raw / f"series_{sid}.json", lambda: _dump(c.series(sid).info()))
+    # a cached "upcoming" snapshot goes stale once the match is played
+    sp = raw / f"series_{sid}.json"
+    if sp.exists():
+        try:
+            old = json.loads(sp.read_text())
+            if not any(g.get("played") for g in old.get("games", [])):
+                sp.unlink()
+        except Exception:
+            sp.unlink(missing_ok=True)
+    info = _cache(sp, lambda: _dump(c.series(sid).info()))
     games = [g for g in info["games"] if g.get("played")]
+    # the source flags unplayed bracket matches as played with TBD maps and
+    # 0-0 scores; a real completed map always has rounds on the board
+    games = [g for g in games
+             if (g.get("team1_score") or 0) + (g.get("team2_score") or 0) > 0]
     if not games:
         return None
     out = []
@@ -58,16 +82,37 @@ def _fetch_series(args):
     return (m, t1, t2, info, out)
 
 
-def ingest_event(con: sqlite3.Connection, event_id: int) -> tuple[int, int]:
+def _is_past(dt) -> bool:
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat(str(dt).replace("Z", "+00:00"))
+        if d.tzinfo is None:
+            # naive timestamps are UTC from the API; without this, the
+            # naive-vs-aware comparison raises and the match is skipped
+            d = d.replace(tzinfo=timezone.utc)
+        return d < datetime.now(timezone.utc)
+    except Exception:
+        return False
+
+
+def ingest_event(con: sqlite3.Connection, event_id: int,
+                 refresh_event: bool = False) -> tuple[int, int]:
     raw = Path(RAW_DIR)
+    if refresh_event:
+        (raw / f"event_{event_id}.json").unlink(missing_ok=True)
     with VLRClient(requests_per_second=RPS) as c:
         matches = _cache(raw / f"event_{event_id}.json", lambda: _dump(c.event(event_id).matches()))
     pending = []
     for m in matches["matches"]:
-        if m.get("status") != "completed" or len(m.get("teams", [])) != 2:
+        if len(m.get("teams", [])) != 2:
             continue
         sid = m["match_id"]
         if con.execute("SELECT 1 FROM series WHERE id=?", (sid,)).fetchone():
+            continue
+        # the event listing can lag: also try past-dated matches it still
+        # calls "upcoming"; _fetch_series drops them if truly unplayed
+        dt = m.get("datetime_utc") or m.get("match_date")
+        if m.get("status") != "completed" and not _is_past(dt):
             continue
         pending.append((sid, m, m["teams"][0], m["teams"][1], raw))
     n_series = n_maps = 0
@@ -115,11 +160,12 @@ def ingest_event(con: sqlite3.Connection, event_id: int) -> tuple[int, int]:
     return n_series, n_maps
 
 
-def run(event_ids=None, db_path=None):
+def run(event_ids=None, db_path=None, refresh_event=False):
+    _fix_proxy_env()
     con = connect(db_path) if db_path else connect()
     ids = event_ids or [e[0] for e in EVENTS]
     for eid in ids:
-        ns, nm = ingest_event(con, eid)
+        ns, nm = ingest_event(con, eid, refresh_event=refresh_event)
         print(f"event {eid}: {ns} series, {nm} maps", flush=True)
     con.execute("INSERT OR REPLACE INTO meta VALUES('ingest_done','1')")
     con.commit()

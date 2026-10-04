@@ -1,4 +1,4 @@
-"""CLI: python3 run.py ingest | elo | train | sim | export | all [--event ID]"""
+"""CLI: python3 run.py ingest | elo | train | sim | export | daily | all [--event ID]"""
 
 import argparse
 import json
@@ -64,6 +64,8 @@ def cmd_sim(_):
         "all": S.round_swing_board(con, "2026-01-01", half_life_days=60,
                                    tier_weight=True, as_of=DATE,
                                    event_ids=SEASON_2026),
+        "champions": S.round_swing_board(con, "2026-01-01", min_rounds=60,
+                                         as_of=DATE, event_ids=[2766]),
         "stage2": S.round_swing_board(con, "2026-01-01", as_of=DATE,
                                       event_ids=STAGE2_2026),
         "stage1": S.round_swing_board(con, "2026-01-01", as_of=DATE,
@@ -79,9 +81,81 @@ def cmd_sim(_):
     con.close()
 
 
+def cmd_daily(_):
+    """Nightly Champions update: score finished games against pre-game
+    snapshots, refresh the model with new results, snapshot fresh
+    predictions for the games still to come, rebuild data.json."""
+    import pandas as pd
+    from pipeline import archive as AR
+    from pipeline import bracket as B
+    from pipeline import playoff as PO
+    from pipeline import track as T
+    from pipeline.config import TEAMS  # noqa: F401  (used by track)
+
+    con = connect()
+    # 1. pull today's results (refresh the event listing: it lags)
+    I.run(event_ids=[2766], refresh_event=True)
+    # 2. score completed Champions series vs the most recent pre-game snapshot.
+    #    Scoring runs before tonight's snapshot is created, so every snapshot
+    #    used here predates the game it scores — nothing has seen the future.
+    scored = T.score(con)
+    print(f"scored {scored} new champions games", flush=True)
+    results = T.results_map(con)
+    fixed = {k: [v["winner"] for v in vs] for k, vs in results.items()}
+    # 2b. kill-feed backfill -> v4 swing pickle stays current, so both the
+    #     "all" swing board and the champions board update as matches are played
+    from pipeline import killfeed as KF
+    sw = KF.update_swing(con)
+    print(f"swing backfill: {sw['new_matches']} new matches,"
+          f" {sw['new_entries']} new entries,"
+          f" pickle now {sw['entries']} entries", flush=True)
+    # 3. ratings + features + model (now including today's games)
+    final = E.run(con, META)
+    E.run(con, META, k_mult=FAST_K_MULT, offseason_keep=1.0, tables=FAST_TABLES)
+    print(f"players tracked: {len(final)}", flush=True)
+    df = F.build(con)
+    df.to_pickle("data/features.pkl")
+    reps = M.evaluate(df)
+    for r in reps:
+        print(r, flush=True)
+    clf, coefs = M.fit_all(df)
+    # 4. tonight's predictions, for the games still to come
+    p, factors = M.pairwise(con, clf, DATE, is_po=0)
+    T.snapshot(p, DATE)
+    print(f"snapshot {DATE}: {len(p)} ordered pairs", flush=True)
+    # 5. full export, track record included; sims and bracket condition on
+    #    series already played instead of re-drawing decided matches
+    ppo, _ = M.pairwise(con, clf, DATE, is_po=1)
+    sim = M.simulate(p, ppo, fixed=fixed)
+    for t in sorted(sim["title"], key=lambda t: -sim["title"][t]):
+        from pipeline.config import TEAMS
+        print(f"{TEAMS[t]:20s} title {sim['title'][t]:.3f}  advance {sim['advance'][t]:.3f}",
+              flush=True)
+    boards = {
+        "all": S.round_swing_board(con, "2026-01-01", half_life_days=60,
+                                   tier_weight=True, as_of=DATE,
+                                   event_ids=SEASON_2026),
+        "champions": S.round_swing_board(con, "2026-01-01", min_rounds=60,
+                                         as_of=DATE, event_ids=[2766]),
+        "stage2": S.round_swing_board(con, "2026-01-01", as_of=DATE,
+                                      event_ids=STAGE2_2026),
+        "stage1": S.round_swing_board(con, "2026-01-01", as_of=DATE,
+                                      event_ids=STAGE1_2026),
+        "kickoff": S.round_swing_board(con, "2026-01-01", as_of=DATE,
+                                       event_ids=KICKOFF_2026),
+    }
+    X.export(con, clf, coefs, reps, sim, p, factors,
+             boards, B.simulate_all(p, results), DATE, track=T.summary(),
+             playoff_bracket=PO.playoff_view(ppo, results))
+    print("wrote site/public/data.json")
+    # 6. timestamp the model in git: snapshot + ledger -> main branch
+    AR.archive_run(DATE, T.summary())
+    con.close()
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["ingest", "elo", "train", "sim", "export", "all"])
+    ap.add_argument("cmd", choices=["ingest", "elo", "train", "sim", "export", "all", "daily"])
     ap.add_argument("--event", type=int, default=None)
     ap.add_argument("--db", default=None)
     args = ap.parse_args()
@@ -93,6 +167,8 @@ def main():
         cmd_train(args)
     if args.cmd in ("sim", "all"):
         cmd_sim(args)
+    if args.cmd == "daily":
+        cmd_daily(args)
     if args.cmd != "elo":
         from pipeline.db import connect as _connect, write_status
         try:

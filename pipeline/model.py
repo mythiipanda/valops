@@ -15,12 +15,35 @@ from .elo import current_strengths, prev_rosters
 # tuned 2026-09-16 overnight: dropped elo_diff (r=0.990 vs elo_fast_diff, sign-flip),
 # added full_diff + eco_diff (full-buy / light-buy round efficiency). pooled brier
 # 0.2356 -> 0.2317 (p=0.015), no 2026 holdout regression.
-DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff", "elo_diff"}
+# Zero-sum fix (2026-09-17): every matchup must satisfy P(B beats A) = 1 - P(A beats B).
+# Root cause of the old violation (e.g. PRX/NS summing to 0.9782): the fitted
+# intercept (-0.0326) plus elo_x_form_diff = elo_diff*form_diff, the only
+# non-antisymmetric feature (product of two diffs is symmetric under swapping
+# sides). Fix: (1) drop elo_x_form_diff from COLS, (2) train with
+# fit_intercept=False, (3) symmetrize training data (each series in both
+# orientations). All remaining features are pure diffs, so with no intercept
+# z(B,A) = -z(A,B) exactly and predict_proba complements to 1.
+DROP = {"lan_diff", "adr_diff", "h2h_diff", "duel_diff", "elo_diff", "elo_x_form_diff"}
 C = 0.75
 COLS = [c for c in
         ([f"{s}_diff" for s in F.ALL] + ["favlen_diff", "elopo_diff", "elo_fast_diff",
                                         "elo_x_form_diff"])
         if c not in DROP]
+
+
+def _fit_zerosum(X: pd.DataFrame, y) -> LogisticRegression:
+    """Symmetrized, intercept-free logistic fit.
+
+    Each training series is included in both orientations (features negated,
+    label flipped), so the model cannot learn an orientation bias. With no
+    intercept and all-antisymmetric features, z(-x) = -z(x) and the two
+    orientations' probabilities sum to exactly 1.
+    """
+    Xv = np.asarray(X.fillna(0.0), dtype=float)
+    yv = np.asarray(y, dtype=float)
+    Xs = np.vstack([Xv, -Xv])
+    ys = np.concatenate([yv, 1.0 - yv])
+    return LogisticRegression(max_iter=2000, C=C, fit_intercept=False).fit(Xs, ys)
 
 
 def brier(y, p):
@@ -38,7 +61,7 @@ def evaluate(df: pd.DataFrame):
         te_df = df[(df["date"].dt.year == te) & (df["event_id"] != 2766)]
         if not len(tr) or not len(te_df):
             continue
-        clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
+        clf = _fit_zerosum(tr[COLS], tr["label"])
         p = clf.predict_proba(te_df[COLS].fillna(0.0))[:, 1]
         reps.append({"train_thru": tr_end, "test": te, "n_test": len(te_df),
                      "brier": round(brier(te_df["label"], p), 4),
@@ -50,7 +73,7 @@ def evaluate(df: pd.DataFrame):
 
 def fit_all(df: pd.DataFrame):
     tr = df[df["event_id"] != 2766]
-    clf = LogisticRegression(max_iter=2000, C=C).fit(tr[COLS].fillna(0.0), tr["label"])
+    clf = _fit_zerosum(tr[COLS], tr["label"])
     return clf, list(zip(COLS, clf.coef_[0]))
 
 
@@ -75,9 +98,23 @@ def pairwise(con: sqlite3.Connection, clf, date, is_po: int = 0) -> tuple[dict, 
     return probs, factors
 
 
-def _gsl(group: list[int], p, rng) -> list[int]:
-    """Double-elim 4-team group. Returns 2 advancers."""
-    def win(a, b):
+def _gsl(group: list[int], p, rng, fixed: dict | None = None) -> list[int]:
+    """Double-elim 4-team group. Returns 2 advancers.
+
+    fixed maps frozenset({a, b}) -> list of winners in chronological order
+    for series already played, so sims condition on real results instead
+    of re-drawing decided matches. A pair can meet twice (opener +
+    decider rematch): the k-th meeting consumes the k-th fixed winner,
+    and meetings past the fixed list are drawn fresh.
+    """
+    fixed = fixed or {}
+    openers = (frozenset((group[0], group[1])),
+               frozenset((group[2], group[3])))
+
+    def win(a, b, occ=0):
+        fl = fixed.get(frozenset((a, b)))
+        if fl is not None and occ < len(fl):
+            return fl[occ]
         return a if rng.random() < p[(a, b)] else b
     w1, w2 = win(group[0], group[1]), win(group[2], group[3])
     adv1 = win(w1, w2)  # winners final, adv1 advances
@@ -86,53 +123,47 @@ def _gsl(group: list[int], p, rng) -> list[int]:
     l_open2 = group[3] if w2 == group[2] else group[2]
     elim_loser = l_open1 if win(l_open1, l_open2) == l_open2 else l_open2
     decider = l_open2 if elim_loser == l_open1 else l_open1
-    adv2 = win(los1, decider)
+    adv2 = win(los1, decider,
+              occ=1 if frozenset((los1, decider)) in openers else 0)
     return [adv1, adv2]
 
 
 def _double_elim(teams: list[int], p, rng, bo5_final=True) -> int:
-    """8-team double elim. Returns champion.
+    """8-team double elim on the fixed official draw. Returns champion.
 
     teams = [A1, A2, B1, B2, C1, C2, D1, D2] (group winner, runner-up pairs).
-    QF draw follows the official Champions rules (2026 VCT ruleset sec. 22):
-    group winners (Pool 1) then runners-up (Pool 2) drawn randomly into QF
-    slots, with same-group teams forced onto opposite bracket sides.
+    The Oct 4 draw is fixed: QF1 = A1 vs C2, QF2 = B1 vs D2, QF3 = D1 vs A2,
+    QF4 = C1 vs B2, with halves {QF1,QF2} vs {QF3,QF4}. Same-group teams are
+    on opposite halves by construction. Lower round 2 crosses halves (the
+    loser of upper semifinal 1 drops into the second LR2 match): LR1 = QF
+    losers, LR2 = LR1 winner vs USF loser from the opposite half,
+    LR3 = LR2 winners, LF = UF loser vs LR3 winner, GF = UF winner vs LF
+    winner. No bracket reset in the grand final.
     """
-    firsts = teams[0::2]
-    seconds = teams[1::2]
-    # Official Champions draw (2026 VCT ruleset, sec. 22): Pool 1 (group
-    # winners) then Pool 2 (runners-up) drawn randomly into QF slots, with
-    # the constraint that same-group teams land on OPPOSITE sides of the
-    # bracket (sides = QF1+QF2 vs QF3+QF4). Same-region matchups allowed.
-    while True:
-        w_qf = list(rng.permutation(4))  # QF index for each group's winner
-        s_qf = list(rng.permutation(4))  # QF index for each group's runner-up
-        if all((w < 2) != (s < 2) for w, s in zip(w_qf, s_qf)):
-            break
-    slots = [None] * 8
-    for g in range(4):
-        slots[2 * w_qf[g]] = firsts[g]
-        slots[2 * s_qf[g] + 1] = seconds[g]
-    teams = slots
+    A1, A2, B1, B2, C1, C2, D1, D2 = teams
+    qf = [(A1, C2), (B1, D2), (D1, A2), (C1, B2)]
     def win(a, b):
         return a if rng.random() < p[(a, b)] else b
-    qf = [win(teams[i], teams[i + 1]) for i in (0, 2, 4, 6)]
-    ql = [teams[i + 1] if qf[i // 2] == teams[i] else teams[i] for i in (0, 2, 4, 6)]
-    sf = [win(qf[0], qf[1]), win(qf[2], qf[3])]
-    sfl = [qf[1] if sf[0] == qf[0] else qf[0], qf[3] if sf[1] == qf[2] else qf[2]]
-    # lower bracket: q losers + s losers filter down
+    qw = [win(a, b) for a, b in qf]
+    ql = [b if w == a else a for (a, b), w in zip(qf, qw)]
+    # upper semifinals, same half
+    sf = [win(qw[0], qw[1]), win(qw[2], qw[3])]
+    sfl = [qw[1] if sf[0] == qw[0] else qw[0],
+           qw[3] if sf[1] == qw[2] else qw[2]]
+    # lower round 1: QF losers, same half
     l1 = [win(ql[0], ql[1]), win(ql[2], ql[3])]
+    # lower round 2: crossed halves — USF1 loser drops to the second match
     l2 = [win(l1[0], sfl[1]), win(l1[1], sfl[0])]
     l3w = win(l2[0], l2[1])
     uf = win(sf[0], sf[1])
     ufl = sf[1] if uf == sf[0] else sf[0]
     lf = win(l3w, ufl)
-    champ = win(uf, lf)  # single series: VCT has no bracket reset (2026 ruleset sec 4.6.10)
+    champ = win(uf, lf)  # single series: VCT has no bracket reset
     return champ
 
 
 def simulate(p_group: dict, p_playoff: dict | None = None,
-             n: int = 10000, seed: int = 7) -> dict:
+             n: int = 10000, seed: int = 7, fixed: dict | None = None) -> dict:
     pp = p_playoff or p_group
     rng = np.random.default_rng(seed)
     titles = {t: 0 for t in TEAMS}
@@ -140,7 +171,7 @@ def simulate(p_group: dict, p_playoff: dict | None = None,
     for _ in range(n):
         po = []
         for g in GROUPS.values():
-            a = _gsl(list(g), p_group, rng)
+            a = _gsl(list(g), p_group, rng, fixed)
             po.extend(a)
             for t in a:
                 adv[t] += 1
