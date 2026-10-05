@@ -91,3 +91,20 @@ GROUPS = {
 
 DB_PATH = "data/valops.db"
 RAW_DIR = "data/raw"
+
+# 2026 stage event lists. Single source of truth: run.py, compedge.py and
+# export.py all import from here; no duplicated id lists elsewhere.
+KICKOFF_2026 = [2682, 2684, 2683, 2685]
+STAGE1_2026 = [2760, 2860, 2863, 2775, 2864]
+STAGE2_2026 = [2765, 2977, 2976, 2776, 2978]
+CHAMPIONS_2026 = 2766
+SEASON_2026 = KICKOFF_2026 + STAGE1_2026 + STAGE2_2026 + [CHAMPIONS_2026]
+
+# pool key -> event ids. "full" is the whole 2026 season above.
+STAGE_POOLS = {
+    "full": SEASON_2026,
+    "kickoff": KICKOFF_2026,
+    "stage1": STAGE1_2026,
+    "stage2": STAGE2_2026,
+    "champions": [CHAMPIONS_2026],
+}

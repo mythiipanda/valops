@@ -184,19 +184,44 @@ const STAGES = [
   { id: 'kickoff', label: 'Kickoff' },
 ];
 
-export function SwingBoard({ boards, stages, hidePool }: {
-  boards: SwingBoards; stages?: { id: string; label: string }[]; hidePool?: boolean }) {
-  const stageOpts = stages ?? STAGES;
-  const [champs, setChamps] = useState(!hidePool);
-  const [stage, setStage] = useState(stageOpts[0].id);
+// Static agent -> role map. Game facts, mirroring pipeline/mapcomp.py ROLE;
+// swing-board rows already carry the role of the player's most-played agent
+// in that pool, this is only needed to classify comp agents client-side.
+const AGENT_ROLES: Record<string, string> = {
+  jett: 'D', reyna: 'D', raze: 'D', yoru: 'D', phoenix: 'D',
+  neon: 'D', iso: 'D', waylay: 'D',
+  omen: 'C', brimstone: 'C', viper: 'C', astra: 'C',
+  harbor: 'C', clove: 'C', miks: 'C',
+  sova: 'I', breach: 'I', skye: 'I', kayo: 'I',
+  fade: 'I', gekko: 'I', tejo: 'I',
+  killjoy: 'S', cypher: 'S', sage: 'S', chamber: 'S',
+  deadlock: 'S', vyse: 'S', veto: 'S',
+};
+
+const roleOfAgent = (name: string): string => AGENT_ROLES[name.toLowerCase()] ?? '?';
+
+// One shared stage vocabulary for every section filter. Swing boards key the
+// whole season as 'all', comp/strength/stats pools as 'full'; both read '2026'.
+const STAGE_LABELS: Record<string, string> = {
+  all: '2026', full: '2026', kickoff: 'Kickoff',
+  stage1: 'Stage 1', stage2: 'Stage 2', champions: 'Champions',
+};
+const SWING_STAGE_IDS = ['all', 'kickoff', 'stage1', 'stage2', 'champions'];
+const POOL_STAGE_IDS = ['full', 'kickoff', 'stage1', 'stage2', 'champions'];
+// dna pools carry bare lists (no label), so the site keeps its own copy of
+// the pool labels from pipeline/compedge.py.
+const POOL_LABELS: Record<string, string> = {
+  full: 'Full 2026 season', kickoff: 'Kickoff 2026', stage1: 'Stage 1 2026',
+  stage2: 'Stage 2 2026', champions: 'Champions Shanghai',
+};
+
+export function SwingTable({ rows }: { rows: SwingRow[] }) {
   const [region, setRegion] = useState('all');
   const [role, setRole] = useState('all');
   const [pq, setPq] = useState('');
   const [sort, setSort] = useState<{ key: 'player' | 'rating' | 'role' | 'rounds'; dir: SortDir }>({ key: 'rating', dir: 'desc' });
   const list = useMemo(() => {
-    const rows = boards[stage] ?? boards['all'] ?? [];
     const f = rows
-      .filter((r) => !champs || r.champs)
       .filter((r) => region === 'all' || r.region === region)
       .filter((r) => role === 'all' || r.role === role)
       .filter((r) => r.name.toLowerCase().includes(pq.toLowerCase()));
@@ -205,34 +230,20 @@ export function SwingBoard({ boards, stages, hidePool }: {
       : sort.key === 'rating' ? r.rating
       : sort.key === 'role' ? (r.role ?? '') : r.rounds;
     return order(f, get, sort.dir);
-  }, [boards, stage, champs, region, role, pq, sort]);
+  }, [rows, region, role, pq, sort]);
   const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['player', 'role']));
-  const showTeam = useMemo(() =>
-    Object.values(boards).some((rows) => rows.some((r) => r.team)), [boards]);
-  // Original rank = position in the unfiltered stage board by rating.
+  const showTeam = useMemo(() => rows.some((r) => r.team), [rows]);
+  // Original rank = position in the unfiltered board by rating.
   // Stays fixed when the user filters/searches or re-sorts.
   const rankOf = useMemo(() => {
-    const rows = boards[stage] ?? boards['all'] ?? [];
     const sorted = [...rows].sort((a, b) => b.rating - a.rating);
     const m = new Map<number, number>();
     sorted.forEach((r, idx) => { if (!m.has(r.player_id)) m.set(r.player_id, idx + 1); });
     return m;
-  }, [boards, stage]);
+  }, [rows]);
   return (
     <div>
       <div className="row island-filter">
-        {stageOpts.length > 1 && (
-        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
-          {stageOpts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
-        </select>
-        )}
-        {!hidePool && (
-        <select aria-label="Player pool" value={champs ? 'champs' : 'all'}
-          onChange={(e) => setChamps(e.target.value === 'champs')}>
-          <option value="champs">Champions players</option>
-          <option value="all">All players</option>
-        </select>
-        )}
         <select aria-label="Region" value={region} onChange={(e) => setRegion(e.target.value)}>
           <option value="all">All regions</option>
           {Object.entries(REGION_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -266,6 +277,94 @@ export function SwingBoard({ boards, stages, hidePool }: {
   );
 }
 
+export function SwingBoard({ boards, stages, hidePool }: {
+  boards: SwingBoards; stages?: { id: string; label: string }[]; hidePool?: boolean }) {
+  const stageOpts = stages ?? STAGES;
+  const [champs, setChamps] = useState(!hidePool);
+  const [stage, setStage] = useState(stageOpts[0].id);
+  const rows = useMemo(() => {
+    const base = boards[stage] ?? boards['all'] ?? [];
+    return base.filter((r) => !champs || r.champs);
+  }, [boards, stage, champs]);
+  return (
+    <div>
+      <div className="row island-filter">
+        {stageOpts.length > 1 && (
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {stageOpts.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+        </select>
+        )}
+        {!hidePool && (
+        <select aria-label="Player pool" value={champs ? 'champs' : 'all'}
+          onChange={(e) => setChamps(e.target.value === 'champs')}>
+          <option value="champs">Champions players</option>
+          <option value="all">All players</option>
+        </select>
+        )}
+      </div>
+      <SwingTable rows={rows} />
+    </div>
+  );
+}
+
+export function SwingSection({ boards, asOf }: { boards: SwingBoards; asOf: string }) {
+  const [stage, setStage] = useState('all');
+  const [role, setRole] = useState('all');
+  const [sort, setSort] = useState<{ key: 'player' | 'rating' | 'role' | 'rounds'; dir: SortDir }>({ key: 'rating', dir: 'desc' });
+  const rows = boards[stage] ?? [];
+  const label = STAGE_LABELS[stage] ?? stage;
+  const list = useMemo(() => {
+    const f = rows.filter((r) => role === 'all' || r.role === role);
+    const get = (r: SwingRow): number | string =>
+      sort.key === 'player' ? r.name
+      : sort.key === 'rating' ? r.rating
+      : sort.key === 'role' ? (r.role ?? '') : r.rounds;
+    return order(f, get, sort.dir);
+  }, [rows, role, sort]);
+  const toggle = (key: typeof sort.key) => setSort((s) => toggleSort(s, key, ['player', 'role']));
+  const rankOf = useMemo(() => {
+    const sorted = [...rows].sort((a, b) => b.rating - a.rating);
+    const m = new Map<number, number>();
+    sorted.forEach((r, idx) => { if (!m.has(r.player_id)) m.set(r.player_id, idx + 1); });
+    return m;
+  }, [rows]);
+  return (
+    <div>
+      <p className="sub">Round-win probability added per 100 rounds, agent-adjusted · {label} · through {asOf}</p>
+      <div className="row island-filter">
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {SWING_STAGE_IDS.map((id) => <option key={id} value={id}>{STAGE_LABELS[id]}</option>)}
+        </select>
+        <select aria-label="Role" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="all">All roles</option>
+          <option value="D">Duelist</option>
+          <option value="I">Initiator</option>
+          <option value="C">Controller</option>
+          <option value="S">Sentinel</option>
+        </select>
+        <span className="mut">{list.length} players</span>
+      </div>
+      {rows.length === 0 ? <p className="mut">No games in this pool yet.</p> : (
+      <table>
+        <thead><tr><th>#</th>
+          <SortTh label="Player" active={sort.key === 'player'} dir={sort.dir} onClick={() => toggle('player')} />
+          <SortTh label="Round Swing" active={sort.key === 'rating'} dir={sort.dir} onClick={() => toggle('rating')} />
+          <SortTh label="Role" active={sort.key === 'role'} dir={sort.dir} onClick={() => toggle('role')} />
+          <SortTh label="Rounds" active={sort.key === 'rounds'} dir={sort.dir} onClick={() => toggle('rounds')} /></tr></thead>
+        <tbody>
+          {list.map((p, i) => (
+            <tr key={p.player_id} id={'swingrow-' + p.player_id}>
+              <td className="num">{rankOf.get(p.player_id) ?? i + 1}</td><td>{p.name}</td>
+              <td className="num">{p.rating}</td><td>{p.role ? ROLE_LABELS[p.role] ?? p.role : '–'}</td><td className="num">{p.rounds}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      )}
+    </div>
+  );
+}
+
 export type CompAgent = { name: string; img: string };
 export type CompTeam = { team: string; w: number; l: number };
 export type MapComp = { map: string; map_img: string; agents: CompAgent[];
@@ -275,30 +374,33 @@ export type MapCompPool = { label: string; n_series: number; n_maps: number;
   min_maps: number; analyzed: number; maps: MapComp[] };
 export type MapCompData = { as_of: string; pools: Record<string, MapCompPool> };
 
-const POOL_TABS = [
-  { id: 'champions', label: 'Champions' },
-  { id: 'full', label: '2026' },
-];
-
 export function CompBoard({ mapComps }: { mapComps: MapCompData }) {
-  const [pool, setPool] = useState(
-    mapComps.pools['champions'] ? 'champions' : Object.keys(mapComps.pools)[0]);
-  const p = mapComps.pools[pool];
+  const [stage, setStage] = useState('full');
+  const [duel, setDuel] = useState('any');
+  const p = mapComps.pools[stage];
+  const nDuel = (agents: CompAgent[]) => agents.filter((a) => roleOfAgent(a.name) === 'D').length;
+  const comps = useMemo(() => (p?.maps ?? []).filter((m) =>
+    duel === 'any' || (duel === '2' ? nDuel(m.agents) >= 2 : nDuel(m.agents) === Number(duel))
+  ), [p, duel]);
   const [sel, setSel] = useState<string | undefined>(undefined);
-  const comps = p?.maps ?? [];
   const c = comps.find((x) => x.map === sel) ?? comps[0];
-  useEffect(() => { setSel(undefined); }, [pool]);
-  if (!p || !c) return null;
+  useEffect(() => { setSel(undefined); }, [stage, duel]);
   return (
     <div>
+      <p className="sub">Best comp per map · {p?.label ?? stage} through {mapComps.as_of} · shrunk wins above Elo expectation.</p>
       <div className="row island-filter">
-        <select aria-label="Comp pool" value={pool} onChange={(e) => setPool(e.target.value)}>
-          {POOL_TABS.filter((t) => mapComps.pools[t.id]).map((t) => (
-            <option key={t.id} value={t.id}>{t.label}</option>
-          ))}
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {POOL_STAGE_IDS.map((id) => <option key={id} value={id}>{STAGE_LABELS[id]}</option>)}
         </select>
+        <select aria-label="Duelists" value={duel} onChange={(e) => setDuel(e.target.value)}>
+          <option value="any">Any duelists</option>
+          <option value="0">0 duelists</option>
+          <option value="1">1 duelist</option>
+          <option value="2">2+ duelists</option>
+        </select>
+        <span className="mut">{comps.length} maps</span>
       </div>
-      <p className="sub">Best 5-agent comp per map, {p.label.toLowerCase()} pool through {mapComps.as_of}. Ranked by shrunk wins above Elo expectation; {p.min_maps}+ maps to qualify, mirrors excluded. {p.n_maps} maps, {p.analyzed} comps analyzed.</p>
+      {!p ? <p className="mut">No games in this pool yet.</p> : !c ? <p className="mut">No comp matches this filter.</p> : (<>
       <div className="row maptabs">
         {comps.map((m) => (
           <button key={m.map} onClick={() => setSel(m.map)}
@@ -324,49 +426,49 @@ export function CompBoard({ mapComps }: { mapComps: MapCompData }) {
         <div className="cstat"><b>+{c.edge.toFixed(1)}</b><span>wins above Elo expectation</span></div>
         <div className="cstat"><b>{(c.pick_rate * 100).toFixed(1)}%</b><span>pick rate on {c.map}</span></div>
       </div>
-      <p className="mut compbest">Run best by {c.top_teams.map((t, i) => (
-        <span key={t.team}>{i > 0 && ' · '}{t.team} <span className="num">{t.w}-{t.l}</span></span>
-      ))}</p>
+      </>)}
     </div>
   );
 }
 
 export type TeamMapRow = { map: string; w: number; l: number; n: number; off: number };
-export type StrengthTeam = { id: number; name: string; maps: TeamMapRow[] };
+export type StrengthTeam = { id: number; name: string; tier1?: boolean; maps: TeamMapRow[] };
 export type StrengthPool = { label: string; n_series: number; n_maps: number;
   maps: string[]; teams: StrengthTeam[] };
 export type StrengthData = { as_of: string; pools: Record<string, StrengthPool> };
 
-export function TeamMapStrength({ strength, index }: {
-  strength: StrengthData; index: SearchIndex }) {
-  const [pool, setPool] = useState(
-    strength.pools['champions'] ? 'champions' : Object.keys(strength.pools)[0]);
-  const p = strength.pools[pool];
+export function TeamMapStrength({ strength }: {
+  strength: StrengthData }) {
+  const [stage, setStage] = useState('full');
+  const p = strength.pools[stage];
+  const flagged = useMemo(() => (p?.teams ?? []).some((t) => t.tier1), [p]);
   const teams = useMemo(() =>
-    [...index.teams].sort((a, b) => a.name.localeCompare(b.name)), [index]);
+    (p?.teams ?? []).filter((t) => !flagged || t.tier1), [p, flagged]);
   const [teamId, setTeamId] = useState(teams[0]?.id);
-  const t = p?.teams.find((x) => x.id === teamId);
+  useEffect(() => {
+    if (!teams.some((x) => x.id === teamId)) setTeamId(teams[0]?.id);
+  }, [stage, strength]);
+  const t = teams.find((x) => x.id === teamId);
   const rows = useMemo(() =>
     t ? [...t.maps].sort((a, b) => b.off - a.off || b.n - a.n) : [], [t]);
-  if (!p) return null;
   return (
     <div>
+      <p className="sub">Per-map record · {p?.label ?? stage} through {strength.as_of} · bar shows shrunk edge vs 50%.</p>
       <div className="row island-filter">
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {POOL_STAGE_IDS.map((id) => <option key={id} value={id}>{STAGE_LABELS[id]}</option>)}
+        </select>
         <select aria-label="Team" value={teamId} onChange={(e) => setTeamId(Number(e.target.value))}>
           {teams.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
         </select>
-        <select aria-label="Map pool" value={pool} onChange={(e) => setPool(e.target.value)}>
-          {POOL_TABS.filter((x) => strength.pools[x.id]).map((x) => (
-            <option key={x.id} value={x.id}>{x.label}</option>
-          ))}
-        </select>
       </div>
-      <p className="sub">{t?.name ?? 'No team'} per-map record, {p.label.toLowerCase()} pool through {strength.as_of}. Strength shrunk toward 50% — thin samples sit near zero.</p>
-      {!t || rows.every((r) => r.n === 0) ? (
+      {!p ? (
+        <p className="mut">No games in this pool yet.</p>
+      ) : !t || rows.every((r) => r.n === 0) ? (
         <p className="mut">No maps played in this pool.</p>
       ) : (
       <table>
-        <thead><tr><th>Map</th><th>W-L</th><th>Strength</th><th></th></tr></thead>
+        <thead><tr><th>Map</th><th>W-L</th><th>Strength</th></tr></thead>
         <tbody>
           {rows.map((r) => {
             const pct = Math.max(-100, Math.min(100, r.off * 200));
@@ -374,17 +476,21 @@ export function TeamMapStrength({ strength, index }: {
             <tr key={r.map}>
               <td>{r.map}</td>
               <td className="num">{r.n === 0 ? '–' : `${r.w}-${r.l}`}</td>
-              <td className="num">{r.n === 0 ? '–' : (r.off > 0 ? '+' : '') + r.off.toFixed(2)}</td>
-              <td style={{ minWidth: 120 }}>
-                {r.n === 0 ? null : (
-                <div style={{ position: 'relative', height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(0,0,0,0.3)' }} />
-                  <div style={{
-                    position: 'absolute', top: 0, bottom: 0, background: 'var(--accent)', opacity: 0.8,
-                    ...(pct >= 0
-                      ? { left: '50%', width: `${pct / 2}%` }
-                      : { right: '50%', width: `${-pct / 2}%` }),
-                  }} />
+              <td>
+                {r.n === 0 ? <span className="mut">–</span> : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ position: 'relative', height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden', flex: 1 }}>
+                    <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(0,0,0,0.3)' }} />
+                    <div style={{
+                      position: 'absolute', top: 0, bottom: 0, background: 'var(--accent)', opacity: 0.8,
+                      ...(pct >= 0
+                        ? { left: '50%', width: `${pct / 2}%` }
+                        : { right: '50%', width: `${-pct / 2}%` }),
+                    }} />
+                  </div>
+                  <span className="mut" style={{ fontSize: 12, minWidth: 38, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {(r.off > 0 ? '+' : '') + r.off.toFixed(2)}
+                  </span>
                 </div>
                 )}
               </td>
@@ -398,6 +504,59 @@ export function TeamMapStrength({ strength, index }: {
   );
 }
 
+export type DnaRow = { id: number; name: string; rounds: number;
+  atk: number; dfn: number; pistol: number; h1: number; h2: number;
+  ot: number; comeback: number; choke: number };
+export type DnaPools = Record<string, DnaRow[]>;
+
+const DNA_COLS = [
+  { key: 'atk', short: 'atk', title: 'Attack round win %' },
+  { key: 'dfn', short: 'def', title: 'Defense round win %' },
+  { key: 'pistol', short: 'pistol', title: 'Pistol round win %' },
+  { key: 'h1', short: '1st', title: 'First-half round win %' },
+  { key: 'h2', short: '2nd', title: 'Second-half round win %' },
+  { key: 'ot', short: 'OT', title: 'Share of rounds played in overtime' },
+  { key: 'comeback', short: 'comeback', title: 'Maps won after trailing by 4+ rounds' },
+  { key: 'choke', short: 'choke', title: 'Maps lost after leading by 4+ rounds' },
+] as const;
+
+export function TeamStats({ pools, asOf }: { pools: DnaPools; asOf: string }) {
+  const [stage, setStage] = useState('full');
+  const rows = pools[stage] ?? [];
+  const label = POOL_LABELS[stage] ?? stage;
+  const lo: Record<string, number> = {}, hi: Record<string, number> = {};
+  DNA_COLS.forEach(({ key }) => {
+    lo[key] = Math.min(...rows.map((r) => r[key]));
+    hi[key] = Math.max(...rows.map((r) => r[key]));
+  });
+  return (
+    <div>
+      <p className="sub">Round win % by situation · {label} · through {asOf}</p>
+      <div className="row island-filter">
+        <select aria-label="Stage" value={stage} onChange={(e) => setStage(e.target.value)}>
+          {POOL_STAGE_IDS.map((id) => <option key={id} value={id}>{STAGE_LABELS[id]}</option>)}
+        </select>
+        <span className="mut">{rows.length} teams</span>
+      </div>
+      {rows.length === 0 ? <p className="mut">No games in this pool yet.</p> : (
+    <table>
+      <thead><tr><th></th>
+        {DNA_COLS.map(({ key, short, title }) => <th key={key} title={title}>{short}</th>)}
+      </tr></thead>
+      <tbody>
+        {rows.map((r) => (
+          <tr key={r.id}><td>{r.name}</td>{DNA_COLS.map(({ key }) => (
+            (r[key] === hi[key] || r[key] === lo[key])
+              ? <td key={key} className="num"><strong>{r[key].toFixed(1)}</strong></td>
+              : <td key={key} className="num">{r[key].toFixed(1)}</td>
+          ))}</tr>
+        ))}
+      </tbody>
+    </table>
+      )}
+    </div>
+  );
+}
 export type SearchIndex = {
   teams: { id: number; name: string }[];
   players: { id: number; name: string; teamId: number | null }[];

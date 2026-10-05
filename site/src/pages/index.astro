@@ -1,6 +1,6 @@
 ---
 import '../styles.css';
-import { Matchup, OddsTable, SwingBoard, PowerTable, CompBoard, TeamMapStrength, GlobalSearch } from '../components/islands';
+import { Matchup, OddsTable, SwingBoard, PowerTable, SwingSection, CompBoard, TeamMapStrength, TeamStats, GlobalSearch } from '../components/islands';
 import { readFileSync, existsSync } from 'node:fs';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -203,15 +203,15 @@ const pfinal = (b: any): string => {
     <a href="#sec-matchup">Matchup</a>
     <a href="#sec-track">Record</a>
     <a href="#sec-groups">Groups</a>
-    <a href="#sec-playoff">Playoff</a>
-    <a href="#sec-mvp">MVP</a>
+    {data.playoff_bracket && <a href="#sec-playoff">Playoff</a>}
     <a href="#sec-power">Strength</a>
     <a href="#sec-teams">Teams</a>
+    <a href="#sec-swing">Swing</a>
+    <a href="#sec-swing">Swing</a>
+    {data.map_comps && <a href="#sec-comps">Comps</a>}
     {data.team_map_strength && <a href="#sec-maps">Maps</a>}
     <a href="#sec-stats">Stats</a>
-    <a href="#sec-swing">Swing</a>
     {prospects && <a href="#sec-prospects">Prospects</a>}
-    {data.map_comps && <a href="#sec-comps">Comps</a>}
     <a href="#sec-method">Method</a>
   </nav>
 
@@ -302,14 +302,6 @@ const pfinal = (b: any): string => {
   </section>
   )}
 
-  {data.swing_boards?.champions?.length > 0 && (
-  <section id="sec-mvp">
-    <h2>Champions MVP</h2>
-    <p class="sub">Round Swing leaders at Champions Shanghai — round-win probability added per 100 rounds, agent-adjusted, small samples shrunk. Updates as the tournament is played.</p>
-    <SwingBoard boards={data.swing_boards} stages={[{ id: 'champions', label: 'Champions 2026' }]} hidePool client:load />
-  </section>
-  )}
-
   <section id="sec-power">
     <h2>Team strength</h2>
     <p class="sub">Average model win probability against the 16-team field.</p>
@@ -336,48 +328,28 @@ const pfinal = (b: any): string => {
     ))}
   </section>
 
-  {data.team_map_strength && searchIndex && (
+  <section id="sec-swing">
+    <h2>2026 Round Swing leaders</h2>
+    <SwingSection boards={data.swing_boards} asOf={data.as_of} client:load />
+  </section>
+
+  {data.map_comps && (
+  <section id="sec-comps">
+    <h2>Best comps</h2>
+    <CompBoard mapComps={data.map_comps} client:load />
+  </section>
+  )}
+
+  {data.team_map_strength && (
   <section id="sec-maps">
     <h2>Map strength</h2>
-    <TeamMapStrength strength={data.team_map_strength} index={searchIndex} client:load />
+    <TeamMapStrength strength={data.team_map_strength} client:load />
   </section>
   )}
 
   <section id="sec-stats">
     <h2>Team Stats</h2>
-    <table class="sortable">
-      <thead><tr><th></th>
-        <th title="Attack round win %">atk</th>
-        <th title="Defense round win %">def</th>
-        <th title="Pistol round win %">pistol</th>
-        <th title="First-half round win %">1st</th>
-        <th title="Second-half round win %">2nd</th>
-        <th title="Share of rounds played in overtime">OT</th>
-        <th title="Maps won after trailing by 4+ rounds">comeback</th>
-        <th title="Maps lost after leading by 4+ rounds">choke</th>
-      </tr></thead>
-      <tbody>
-        {(() => {
-          const rows = data.dna;
-          const keys = ['atk','dfn','pistol','h1','h2','ot','comeback','choke'];
-          const lo = {}, hi = {};
-          keys.forEach(k => { lo[k] = Math.min(...rows.map(r => r[k])); hi[k] = Math.max(...rows.map(r => r[k])); });
-          return rows.map(r => (
-            <tr><td>{r.name}</td>{keys.map(k => (
-              (r[k] === hi[k] || r[k] === lo[k])
-                ? <td class="num"><strong>{r[k].toFixed(1)}</strong></td>
-                : <td class="num">{r[k].toFixed(1)}</td>
-            ))}</tr>
-          ));
-        })()}
-      </tbody>
-    </table>
-  </section>
-
-  <section id="sec-swing">
-    <h2>2026 Round Swing leaders</h2>
-    <p class="sub">Round-win probability added per 100 rounds, agent-adjusted, small samples shrunk.</p>
-    <SwingBoard boards={data.swing_boards} client:load />
+    <TeamStats pools={data.dna_pools ?? (data.dna ? { stage2: data.dna } : {})} asOf={data.as_of} client:load />
   </section>
 
   {prospects && (
@@ -385,13 +357,6 @@ const pfinal = (b: any): string => {
     <h2>Prospects</h2>
     <p class="sub">Round Swing leaders from 2026 NA Challengers, same formula. Through {prospects.as_of}.</p>
     <SwingBoard boards={prospects.boards} stages={prospectStages} hidePool client:load />
-  </section>
-  )}
-
-  {data.map_comps && (
-  <section id="sec-comps">
-    <h2>Best comps</h2>
-    <CompBoard mapComps={data.map_comps} client:load />
   </section>
   )}
 

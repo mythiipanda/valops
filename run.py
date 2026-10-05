@@ -10,18 +10,22 @@ from pipeline import features as F
 from pipeline import ingest as I
 from pipeline import model as M
 from pipeline import swing as S
-from pipeline.config import EVENTS, FAST_K_MULT, FAST_TABLES
+from pipeline.config import (
+    CHAMPIONS_2026,
+    EVENTS,
+    FAST_K_MULT,
+    FAST_TABLES,
+    KICKOFF_2026,
+    STAGE1_2026,
+    STAGE2_2026,
+    SEASON_2026,
+)
 from pipeline.db import connect
 
 META = {e: (y, t) for e, y, t, _ in EVENTS}
 from datetime import date
 # "now" for the whole run: data.json as_of, swing recency, pairwise cutoff
 DATE = date.today().isoformat()
-
-KICKOFF_2026 = [2682, 2684, 2683, 2685]
-STAGE1_2026 = [2760, 2860, 2863, 2775, 2864]
-STAGE2_2026 = [2765, 2977, 2976, 2776, 2978]
-SEASON_2026 = KICKOFF_2026 + STAGE1_2026 + STAGE2_2026 + [2766]  # +Champions, no data yet
 
 
 def _map_data(con):
@@ -74,13 +78,13 @@ def cmd_sim(_):
                                    tier_weight=True, as_of=DATE,
                                    event_ids=SEASON_2026),
         "champions": S.round_swing_board(con, "2026-01-01", min_rounds=60,
-                                         as_of=DATE, event_ids=[2766]),
+                                          as_of=DATE, event_ids=[CHAMPIONS_2026]),
         "stage2": S.round_swing_board(con, "2026-01-01", as_of=DATE,
-                                      event_ids=STAGE2_2026),
+                                       event_ids=STAGE2_2026),
         "stage1": S.round_swing_board(con, "2026-01-01", as_of=DATE,
-                                      event_ids=STAGE1_2026),
+                                       event_ids=STAGE1_2026),
         "kickoff": S.round_swing_board(con, "2026-01-01", as_of=DATE,
-                                       event_ids=KICKOFF_2026),
+                                        event_ids=KICKOFF_2026),
     }
     for k, b in boards.items():
         print(f"swing board {k}: {len(b)} players")
@@ -155,9 +159,9 @@ def cmd_daily(_):
                                    tier_weight=True, as_of=DATE,
                                    event_ids=SEASON_2026),
         "champions": S.round_swing_board(con, "2026-01-01", min_rounds=60,
-                                         as_of=DATE, event_ids=[2766]),
+                                          as_of=DATE, event_ids=[CHAMPIONS_2026]),
         "stage2": S.round_swing_board(con, "2026-01-01", as_of=DATE,
-                                      event_ids=STAGE2_2026),
+                                       event_ids=STAGE2_2026),
         "stage1": S.round_swing_board(con, "2026-01-01", as_of=DATE,
                                       event_ids=STAGE1_2026),
         "kickoff": S.round_swing_board(con, "2026-01-01", as_of=DATE,

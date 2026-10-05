@@ -6,21 +6,29 @@ shrunk by maps played. Mirrors (both teams same comp) excluded.
 Pool B (team_map_strength): per team x map W-L + shrunk offset vs 50%,
 reusing mapedge._off.
 
-Two pools each: full 2026 season and Champions-only (event 2766).
-Output goes into data.json via export(); no stray files.
+Two pools per stage: full 2026 season plus kickoff / stage1 / stage2 /
+Champions. Output goes into data.json via export(); no stray files.
 """
 
 import sqlite3
 
-from .config import EVENTS
+from .config import EVENTS, STAGE_POOLS
 from .elo import expected
 from .mapedge import _off
 
-CHAMPS_EVENT = 2766
-FULL_2026 = [eid for eid, year, _, _ in EVENTS if year == 2026]
+POOLS = STAGE_POOLS
+POOL_LABELS = {
+    "full": "Full 2026 season",
+    "kickoff": "Kickoff 2026",
+    "stage1": "Stage 1 2026",
+    "stage2": "Stage 2 2026",
+    "champions": "Champions Shanghai",
+}
 
-POOLS = {"full": FULL_2026, "champions": [CHAMPS_EVENT]}
-POOL_LABELS = {"full": "Full 2026 season", "champions": "Champions Shanghai"}
+# Tier-1, data-driven: any 2026 event whose tier in EVENTS is masters-level
+# or better counts; a team is tier-1 if it played at least one series there.
+TIER1_EVENTS = [eid for eid, year, tier, _ in EVENTS
+                if year == 2026 and tier in ("masters", "champions")]
 
 
 def min_maps(n_pool_maps: int) -> int:
@@ -117,7 +125,17 @@ def build_map_comps(con: sqlite3.Connection, names: dict) -> dict:
     return pools
 
 
+def tier1_teams(con: sqlite3.Connection) -> set:
+    """Team ids that played at least one series in a 2026 masters/champions event."""
+    q = ",".join(map(str, TIER1_EVENTS))
+    rows = con.execute(
+        "SELECT team_a, team_b FROM series"
+        f" WHERE event_id IN ({q})").fetchall()
+    return {tid for ta, tb in rows for tid in (ta, tb)}
+
+
 def build_team_strength(con: sqlite3.Connection, names: dict) -> dict:
+    tier1 = tier1_teams(con)
     pools = {}
     for pool, eids in POOLS.items():
         q = ",".join(map(str, eids))
@@ -141,6 +159,7 @@ def build_team_strength(con: sqlite3.Connection, names: dict) -> dict:
                 cards.append({"map": mp, "w": w, "l": l, "n": w + l,
                               "off": round(_off(w, w + l), 4)})
             teams.append({"id": tid, "name": names.get(tid, f"team {tid}"),
+                          "tier1": tid in tier1,
                           "maps": cards})
         teams.sort(key=lambda t: t["name"])
         pools[pool] = {"label": POOL_LABELS[pool],

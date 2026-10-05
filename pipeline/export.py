@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from .config import EVENTS, GROUPS, TEAMS
+from .config import EVENTS, GROUPS, STAGE_POOLS, TEAMS
 
 STAGE2_EVENTS = [2977, 2976, 2776, 2978]
 REGIONS = ("AM", "EMEA", "PAC", "CN")
@@ -42,11 +42,16 @@ def team_meta() -> tuple[dict, dict]:
     return names, regions
 
 
-def team_dna(con: sqlite3.Connection) -> list:
-    """Stage-2 round-level fingerprints for the Champions field."""
+def team_dna(con: sqlite3.Connection, event_ids: list | None = None) -> list:
+    """Stage-2 round-level fingerprints for the Champions field.
+
+    event_ids selects the stage; defaults to STAGE2_EVENTS (unchanged).
+    team_dna_pools builds one fingerprint table per stage pool so the
+    Team stats section can follow the global stage filter."""
+    evts = event_ids if event_ids is not None else STAGE2_EVENTS
     rd = pd.read_sql("SELECT * FROM round_detail", con)
     s = pd.read_sql("SELECT id, team_a, team_b, event_id FROM series", con)
-    rd = rd[rd["series_id"].isin(s[s["event_id"].isin(STAGE2_EVENTS)]["id"])]
+    rd = rd[rd["series_id"].isin(s[s["event_id"].isin(evts)]["id"])]
     rd = rd.merge(s[["id", "team_a", "team_b"]], left_on="series_id", right_on="id")
     rd["loser_id"] = rd.apply(
         lambda r: r["team_b"] if r["winner_id"] == r["team_a"] else r["team_a"], axis=1)
@@ -86,6 +91,11 @@ def team_dna(con: sqlite3.Connection) -> list:
             "choke": round((led4 & ~map_won).mean() * 100, 1),
         })
     return out
+
+
+def team_dna_pools(con: sqlite3.Connection) -> dict:
+    """Per-stage fingerprint tables, keyed like STAGE_POOLS."""
+    return {pool: team_dna(con, eids) for pool, eids in STAGE_POOLS.items()}
 
 
 def stage2_form(con) -> dict:
@@ -208,8 +218,9 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
                "bracket": bracket_view,
                "playoff_bracket": playoff_bracket,
                "map_comps": map_comps,
-               "team_map_strength": team_map_strength,
-               "dna": team_dna(con)}
+                "team_map_strength": team_map_strength,
+                "dna": team_dna(con),
+                "dna_pools": team_dna_pools(con)}
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(json.dumps(payload))
     return payload
