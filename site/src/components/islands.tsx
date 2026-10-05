@@ -269,15 +269,36 @@ export function SwingBoard({ boards, stages, hidePool }: {
 export type CompAgent = { name: string; img: string };
 export type CompTeam = { team: string; w: number; l: number };
 export type MapComp = { map: string; map_img: string; agents: CompAgent[];
-  edge: number; w: number; l: number; maps: number; pick_rate: number;
-  top_teams: CompTeam[] };
+  edge: number; edge_rate: number; w: number; l: number; maps: number;
+  expected: number; pick_rate: number; top_teams: CompTeam[] };
+export type MapCompPool = { label: string; n_series: number; n_maps: number;
+  min_maps: number; analyzed: number; maps: MapComp[] };
+export type MapCompData = { as_of: string; pools: Record<string, MapCompPool> };
 
-export function CompBoard({ comps }: { comps: MapComp[] }) {
-  const [sel, setSel] = useState(comps[0]?.map);
+const POOL_TABS = [
+  { id: 'champions', label: 'Champions' },
+  { id: 'full', label: '2026' },
+];
+
+export function CompBoard({ mapComps }: { mapComps: MapCompData }) {
+  const [pool, setPool] = useState(
+    mapComps.pools['champions'] ? 'champions' : Object.keys(mapComps.pools)[0]);
+  const p = mapComps.pools[pool];
+  const [sel, setSel] = useState<string | undefined>(undefined);
+  const comps = p?.maps ?? [];
   const c = comps.find((x) => x.map === sel) ?? comps[0];
-  if (!c) return null;
+  useEffect(() => { setSel(undefined); }, [pool]);
+  if (!p || !c) return null;
   return (
     <div>
+      <div className="row island-filter">
+        <select aria-label="Comp pool" value={pool} onChange={(e) => setPool(e.target.value)}>
+          {POOL_TABS.filter((t) => mapComps.pools[t.id]).map((t) => (
+            <option key={t.id} value={t.id}>{t.label}</option>
+          ))}
+        </select>
+      </div>
+      <p className="sub">Best 5-agent comp per map, {p.label.toLowerCase()} pool through {mapComps.as_of}. Ranked by shrunk wins above Elo expectation; {p.min_maps}+ maps to qualify, mirrors excluded. {p.n_maps} maps, {p.analyzed} comps analyzed.</p>
       <div className="row maptabs">
         {comps.map((m) => (
           <button key={m.map} onClick={() => setSel(m.map)}
@@ -300,12 +321,79 @@ export function CompBoard({ comps }: { comps: MapComp[] }) {
       </div>
       <div className="row compstats">
         <div className="cstat"><b>{c.w}-{c.l}</b><span>record · {c.maps} maps</span></div>
-        <div className="cstat"><b>+{(c.edge * 100).toFixed(1)}</b><span>pts above Elo expectation</span></div>
+        <div className="cstat"><b>+{c.edge.toFixed(1)}</b><span>wins above Elo expectation</span></div>
         <div className="cstat"><b>{(c.pick_rate * 100).toFixed(1)}%</b><span>pick rate on {c.map}</span></div>
       </div>
       <p className="mut compbest">Run best by {c.top_teams.map((t, i) => (
         <span key={t.team}>{i > 0 && ' · '}{t.team} <span className="num">{t.w}-{t.l}</span></span>
       ))}</p>
+    </div>
+  );
+}
+
+export type TeamMapRow = { map: string; w: number; l: number; n: number; off: number };
+export type StrengthTeam = { id: number; name: string; maps: TeamMapRow[] };
+export type StrengthPool = { label: string; n_series: number; n_maps: number;
+  maps: string[]; teams: StrengthTeam[] };
+export type StrengthData = { as_of: string; pools: Record<string, StrengthPool> };
+
+export function TeamMapStrength({ strength, index }: {
+  strength: StrengthData; index: SearchIndex }) {
+  const [pool, setPool] = useState(
+    strength.pools['champions'] ? 'champions' : Object.keys(strength.pools)[0]);
+  const p = strength.pools[pool];
+  const teams = useMemo(() =>
+    [...index.teams].sort((a, b) => a.name.localeCompare(b.name)), [index]);
+  const [teamId, setTeamId] = useState(teams[0]?.id);
+  const t = p?.teams.find((x) => x.id === teamId);
+  const rows = useMemo(() =>
+    t ? [...t.maps].sort((a, b) => b.off - a.off || b.n - a.n) : [], [t]);
+  if (!p) return null;
+  return (
+    <div>
+      <div className="row island-filter">
+        <select aria-label="Team" value={teamId} onChange={(e) => setTeamId(Number(e.target.value))}>
+          {teams.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+        </select>
+        <select aria-label="Map pool" value={pool} onChange={(e) => setPool(e.target.value)}>
+          {POOL_TABS.filter((x) => strength.pools[x.id]).map((x) => (
+            <option key={x.id} value={x.id}>{x.label}</option>
+          ))}
+        </select>
+      </div>
+      <p className="sub">{t?.name ?? 'No team'} per-map record, {p.label.toLowerCase()} pool through {strength.as_of}. Strength shrunk toward 50% — thin samples sit near zero.</p>
+      {!t || rows.every((r) => r.n === 0) ? (
+        <p className="mut">No maps played in this pool.</p>
+      ) : (
+      <table>
+        <thead><tr><th>Map</th><th>W-L</th><th>Strength</th><th></th></tr></thead>
+        <tbody>
+          {rows.map((r) => {
+            const pct = Math.max(-100, Math.min(100, r.off * 200));
+            return (
+            <tr key={r.map}>
+              <td>{r.map}</td>
+              <td className="num">{r.n === 0 ? '–' : `${r.w}-${r.l}`}</td>
+              <td className="num">{r.n === 0 ? '–' : (r.off > 0 ? '+' : '') + r.off.toFixed(2)}</td>
+              <td style={{ minWidth: 120 }}>
+                {r.n === 0 ? null : (
+                <div style={{ position: 'relative', height: 3, background: 'var(--line)', borderRadius: 2, overflow: 'hidden' }}>
+                  <div style={{ position: 'absolute', left: '50%', top: 0, bottom: 0, width: 1, background: 'rgba(0,0,0,0.3)' }} />
+                  <div style={{
+                    position: 'absolute', top: 0, bottom: 0, background: 'var(--accent)', opacity: 0.8,
+                    ...(pct >= 0
+                      ? { left: '50%', width: `${pct / 2}%` }
+                      : { right: '50%', width: `${-pct / 2}%` }),
+                  }} />
+                </div>
+                )}
+              </td>
+            </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      )}
     </div>
   );
 }

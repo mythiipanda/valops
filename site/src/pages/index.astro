@@ -1,6 +1,6 @@
 ---
 import '../styles.css';
-import { Matchup, OddsTable, SwingBoard, PowerTable, CompBoard, GlobalSearch } from '../components/islands';
+import { Matchup, OddsTable, SwingBoard, PowerTable, CompBoard, TeamMapStrength, GlobalSearch } from '../components/islands';
 import { readFileSync, existsSync } from 'node:fs';
 import katex from 'katex';
 import 'katex/dist/katex.min.css';
@@ -8,8 +8,6 @@ const tex = (s: string) => katex.renderToString(s, { throwOnError: false });
 
 const has = existsSync(new URL('../../public/data.json', import.meta.url));
 const data = has ? JSON.parse(readFileSync(new URL('../../public/data.json', import.meta.url), 'utf8')) : null;
-const hasComps = existsSync(new URL('../../public/comps.json', import.meta.url));
-const comps = hasComps ? JSON.parse(readFileSync(new URL('../../public/comps.json', import.meta.url), 'utf8')) : null;
 const hasProspects = existsSync(new URL('../../public/prospects.json', import.meta.url));
 const prospects = hasProspects ? JSON.parse(readFileSync(new URL('../../public/prospects.json', import.meta.url), 'utf8')) : null;
 const prospectStages = [
@@ -209,10 +207,11 @@ const pfinal = (b: any): string => {
     <a href="#sec-mvp">MVP</a>
     <a href="#sec-power">Strength</a>
     <a href="#sec-teams">Teams</a>
+    {data.team_map_strength && <a href="#sec-maps">Maps</a>}
     <a href="#sec-stats">Stats</a>
     <a href="#sec-swing">Swing</a>
     {prospects && <a href="#sec-prospects">Prospects</a>}
-    {comps && <a href="#sec-comps">Comps</a>}
+    {data.map_comps && <a href="#sec-comps">Comps</a>}
     <a href="#sec-method">Method</a>
   </nav>
 
@@ -337,6 +336,13 @@ const pfinal = (b: any): string => {
     ))}
   </section>
 
+  {data.team_map_strength && searchIndex && (
+  <section id="sec-maps">
+    <h2>Map strength</h2>
+    <TeamMapStrength strength={data.team_map_strength} index={searchIndex} client:load />
+  </section>
+  )}
+
   <section id="sec-stats">
     <h2>Team Stats</h2>
     <table class="sortable">
@@ -382,11 +388,10 @@ const pfinal = (b: any): string => {
   </section>
   )}
 
-  {comps && (
+  {data.map_comps && (
   <section id="sec-comps">
     <h2>Best comps</h2>
-    <p class="sub">Best 5-agent comp per map, Champions pool. Ranked by wins above what Elo predicted. 8+ maps to qualify, mirrors excluded, small samples shrunk.</p>
-    <CompBoard comps={comps} client:load />
+    <CompBoard mapComps={data.map_comps} client:load />
   </section>
   )}
 

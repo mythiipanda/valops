@@ -24,6 +24,15 @@ STAGE2_2026 = [2765, 2977, 2976, 2776, 2978]
 SEASON_2026 = KICKOFF_2026 + STAGE1_2026 + STAGE2_2026 + [2766]  # +Champions, no data yet
 
 
+def _map_data(con):
+    """Fresh comp edges + team map strength for export()."""
+    from pipeline import compedge as CE
+    names, _ = X.team_meta()
+    md = CE.build(con, names, DATE)
+    return {"map_comps": md["map_comps"],
+            "team_map_strength": md["team_map_strength"]}
+
+
 def cmd_ingest(args):
     ids = [args.event] if args.event else None
     I.run(event_ids=ids)
@@ -75,8 +84,13 @@ def cmd_sim(_):
     }
     for k, b in boards.items():
         print(f"swing board {k}: {len(b)} players")
+    from pipeline import mapcomp as MC
+    MC.run(con)
+    md = _map_data(con)
     X.export(con, clf, coefs, M.evaluate(df), sim, p, factors,
-             boards, B.simulate_all(p), DATE)
+             boards, B.simulate_all(p), DATE,
+             map_comps=md["map_comps"],
+             team_map_strength=md["team_map_strength"])
     print("wrote site/public/data.json")
     con.close()
 
@@ -95,6 +109,11 @@ def cmd_daily(_):
     con = connect()
     # 1. pull today's results (refresh the event listing: it lags)
     I.run(event_ids=[2766], refresh_event=True)
+    # 1b. rebuild per-map comps from the refreshed raw cache (was stale:
+    #     Champions rows were missing entirely) so comp edges, team map
+    #     strength, and map-comp features all see today's games
+    from pipeline import mapcomp as MC
+    MC.run(con)
     # 2. score completed Champions series vs the most recent pre-game snapshot.
     #    Scoring runs before tonight's snapshot is created, so every snapshot
     #    used here predates the game it scores — nothing has seen the future.
@@ -146,7 +165,8 @@ def cmd_daily(_):
     }
     X.export(con, clf, coefs, reps, sim, p, factors,
              boards, B.simulate_all(p, results), DATE, track=T.summary(),
-             playoff_bracket=PO.playoff_view(ppo, results))
+             playoff_bracket=PO.playoff_view(ppo, results),
+             **_map_data(con))
     print("wrote site/public/data.json")
     # 6. timestamp the model in git: snapshot + ledger -> main branch
     AR.archive_run(DATE, T.summary())

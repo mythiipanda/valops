@@ -118,7 +118,8 @@ def stage2_form(con) -> dict:
 
 def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
            factors, swing_boards, bracket_view, date: str, out: str = "site/public/data.json",
-           track: dict | None = None, playoff_bracket: dict | None = None):
+           track: dict | None = None, playoff_bracket: dict | None = None,
+           map_comps: dict | None = None, team_map_strength: dict | None = None):
     from datetime import datetime, timezone
     run_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     elos = dict(con.execute("SELECT player_id, elo FROM player_elo").fetchall())
@@ -206,6 +207,8 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
                "swing_boards": swing_boards,
                "bracket": bracket_view,
                "playoff_bracket": playoff_bracket,
+               "map_comps": map_comps,
+               "team_map_strength": team_map_strength,
                "dna": team_dna(con)}
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text(json.dumps(payload))
