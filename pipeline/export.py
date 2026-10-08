@@ -163,6 +163,11 @@ def export(con: sqlite3.Connection, clf, coefs, reports, sim, pairwise_p,
                       "elo": round(slow, 1), "fast": round(fast, 1),
                       "group": team_group.get(t), "roster": ps})
     teams.sort(key=lambda t: -t["title"])
+    if playoff_bracket is not None:
+        po_title = {o["id"]: o["title"] for o in playoff_bracket.get("odds", [])}
+        for t in teams:
+            t["title"] = po_title.get(t["id"], 0.0)
+        teams.sort(key=lambda t: -t["title"])
     matchups = [{"a": a, "b": b, "p": round(p, 4),
                  "factors": factors.get((a, b), [])}
                 for (a, b), p in sorted(pairwise_p.items())]
